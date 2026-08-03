@@ -37,24 +37,30 @@ kubectl apply -f k8s/secret.yaml
 > ⚠️ `k8s/secret.yaml` contient des mots de passe **en clair** dans le dépôt.
 > Pour la production, préférez Sealed Secrets, External Secrets ou Vault.
 
-## 2. Construire et pousser l'image
+## 2. Pousser l'image (CI/CD)
+
+L'image est construite et poussée automatiquement sur **GitHub Container Registry**
+(`ghcr.io/lhdmi/production-tracker`) à chaque push sur `main` par le workflow
+`.github/workflows/build-and-push.yml`. Tags poussés : `latest` + `sha-<commit>`.
+
+Build manuel éventuel :
 
 ```bash
-docker build -t registry.example.com/production-tracker:latest .
-docker push registry.example.com/production-tracker:latest
+docker build -t ghcr.io/lhdmi/production-tracker:latest .
+docker push ghcr.io/lhdmi/production-tracker:latest
 ```
 
-Remplacez `registry.example.com` par votre registre, puis mettez à jour la référence d'image
-dans `k8s/backend.yaml` et `k8s/db-init-job.yaml`.
-
-Si le registre est privé :
+Si le package GHCR est privé (dépôt GitHub privé), le cluster doit pouvoir tirer l'image :
+créez un Personal Access Token GitHub avec la permission `read:packages`, puis :
 
 ```bash
 kubectl -n production-tracker create secret docker-registry regcred \
-  --docker-server=registry.example.com \
-  --docker-username=<user> \
-  --docker-password=<pass>
+  --docker-server=ghcr.io \
+  --docker-username=<github-username> \
+  --docker-password=<PAT>
 ```
+
+> Si le dépôt GitHub est public, le package GHCR est public aussi et `regcred` n'est pas nécessaire.
 
 ## 3. Déployer la base de données
 
@@ -103,12 +109,15 @@ Comptes de démo (créés par le seed) :
 
 ### Mettre à jour l'application
 
+Après un push sur `main`, le CI pousse une nouvelle image `latest` (et `sha-<commit>`).
+Pour prendre la nouvelle version sans éditer les manifests :
+
 ```bash
-docker build -t registry.example.com/production-tracker:newtag .
-docker push registry.example.com/production-tracker:newtag
-# mettez à jour la tag d'image dans backend.yaml puis :
-kubectl apply -f k8s/backend.yaml
+kubectl -n production-tracker rollout restart deployment/production-tracker
+kubectl -n production-tracker rollout status deployment/production-tracker
 ```
+
+(`imagePullPolicy: Always` force le redéploiement de l'image `latest`.)
 
 ### Modifier le schéma de base de données
 

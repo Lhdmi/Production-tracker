@@ -15,7 +15,8 @@ spec:
         - name: regcred
       containers:
         - name: db-init
-          image: registry.example.com/production-tracker:latest
+          image: ghcr.io/lhdmi/production-tracker:latest
+          imagePullPolicy: Always
           envFrom:
             - configMapRef:
                 name: production-tracker
