@@ -115,9 +115,9 @@ export default function QualityChecklist({ lotId, canManage, existing, onSaved }
           const value = values[cp.id] || "";
           return (
             <li key={cp.id} className="rounded-xl border border-slate-200 p-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="font-bold text-slate-900">
+                  <p className="truncate font-bold text-slate-900">
                     {cp.name}
                     {cp.requires_second_visa && (
                       <span className="ml-2 inline-block rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-black text-violet-700 ring-1 ring-inset ring-violet-200">
@@ -125,9 +125,9 @@ export default function QualityChecklist({ lotId, canManage, existing, onSaved }
                       </span>
                     )}
                   </p>
-                  {cp.description && <p className="text-xs font-semibold text-slate-500">{cp.description}</p>}
+                  {cp.description && <p className="truncate text-xs font-semibold text-slate-500">{cp.description}</p>}
                 </div>
-                <div className="flex gap-1.5">
+                <div className="flex shrink-0 gap-1.5">
                   {OPTIONS.map((o) => (
                     <button
                       key={o.value}
