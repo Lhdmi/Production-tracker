@@ -1,10 +1,12 @@
 import { Router } from "express";
 import { sql } from "drizzle-orm";
 import { pool, db } from "../db/client.js";
-import { lots, weights, anomalies, qualityChecks as checksTable, lotDocuments, lotScanVerifications } from "../db/schema.js";
+import { lots, weights, anomalies, qualityChecks as checksTable, lotDocuments, lotScanVerifications, rawMaterials, lotRawMaterials } from "../db/schema.js";
 import { authenticate, authorize } from "../middleware/auth.js";
 import { uploadImage, toPublicUrl } from "../utils/storage.js";
 import { runOcr } from "../utils/ocr.js";
+import { config } from "../config.js";
+import { buildLotNumber, parseLotNumber, parseDateOnly, julianDay } from "../utils/lotNumber.js";
 
 const router = Router();
 router.use(authenticate);
@@ -20,6 +22,11 @@ async function getLotRow(id) {
     sql`
       SELECT l.id, l.lot_number AS "lotNumber", l.status, l.created_at AS "createdAt",
              l.updated_at AS "updatedAt", l.completed_at AS "completedAt",
+             l.production_date AS "productionDate", l.production_year AS "productionYear",
+             l.julian_day AS "julianDay", l.best_before AS "bestBefore",
+             l.product_reference AS "productReference", l.variety,
+             l.plant_code AS "plantCode", l.line, l.batch_flag AS "batchFlag",
+             l.batch_run AS "batchRun",
              l.op_id AS "opId", o.op_number AS "opNumber",
              u.name AS "createdByName", u.id AS "createdById"
       FROM lots l
@@ -90,6 +97,22 @@ async function getDocuments(lotId) {
   return rows;
 }
 
+async function getLotMaterials(lotId) {
+  const { rows } = await pool.query(`
+    SELECT rm.id, rm.lot_number AS "lotNumber", rm.ot_number AS "otNumber",
+           rm.designation, rm.reference, rm.best_before AS "bestBefore",
+           rm.production_date AS "productionDate", rm.supplier,
+           rm.quantity::float8 AS quantity, rm.quality_status AS "qualityStatus",
+           lrm.created_at AS "linkedAt", u.name AS "linkedByName"
+    FROM lot_raw_materials lrm
+    JOIN raw_materials rm ON rm.id = lrm.raw_material_id
+    LEFT JOIN users u ON u.id = lrm.created_by
+    WHERE lrm.lot_id = $1
+    ORDER BY lrm.id DESC
+  `, [lotId]);
+  return rows;
+}
+
 router.get("/", async (req, res, next) => {
   try {
     const q = (req.query.q || "").toString().trim();
@@ -122,6 +145,8 @@ router.get("/", async (req, res, next) => {
     const { rows } = await pool.query(`
       SELECT l.id, l.lot_number AS "lotNumber", l.status, l.created_at AS "createdAt",
              l.updated_at AS "updatedAt", l.completed_at AS "completedAt",
+             l.production_date AS "productionDate", l.julian_day AS "julianDay",
+             l.best_before AS "bestBefore", l.product_reference AS "productReference",
              o.op_number AS "opNumber", u.name AS "createdByName",
              (SELECT count(*)::int FROM weights w WHERE w.lot_id = l.id) AS "weightCount",
              (SELECT COALESCE(sum(w.weight),0)::float8 FROM weights w WHERE w.lot_id = l.id) AS "weightSum",
@@ -191,7 +216,50 @@ router.get("/scan", async (req, res, next) => {
       return res.json({ kind: "op", op: opRows[0], lots: lotsList });
     }
 
+    const parsed = parseLotNumber(code);
+    if (parsed) {
+      return res.status(404).json({
+        error: `Format de lot PF valide (année ${parsed.year}, jour julien ${parsed.julianDay}, usine ${parsed.plantCode}, ligne ${parsed.line}) mais aucun lot enregistré pour ce code.`
+      });
+    }
+
     res.status(404).json({ error: `Aucun lot ni OP trouvé pour le code « ${code} »` });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Aperçu de génération du numéro de lot PF à partir de la date de production.
+// GET /api/lots/generate?date=YYYY-MM-DD&plant=&line=&flag=&run=
+router.get("/generate", async (req, res, next) => {
+  try {
+    const productionDate = (req.query.date || "").toString().trim();
+    const plantCode = (req.query.plant || "").toString().trim() || config.plantCode;
+    const line = (req.query.line || "").toString().trim() || config.prodLine;
+    const flag = (req.query.flag || "").toString().trim();
+    const run = (req.query.run || "").toString().trim() || "1";
+    const d = parseDateOnly(productionDate);
+    if (!d) return res.status(400).json({ error: "Date de production invalide (AAAA-MM-JJ)" });
+    const lotNumber = buildLotNumber({ productionDate, plantCode, line, flag, run });
+    res.json({
+      lotNumber,
+      productionYear: d.getUTCFullYear(),
+      julianDay: julianDay(productionDate),
+      date: productionDate
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Validation / décodage d'un code batch PF.
+// GET /api/lots/parse?code=61218861A1
+router.get("/parse", async (req, res, next) => {
+  try {
+    const code = (req.query.code || "").toString().trim();
+    const parsed = parseLotNumber(code);
+    if (!parsed) return res.json({ valid: false });
+    res.json({ valid: true, ...parsed });
   } catch (err) {
     next(err);
   }
@@ -200,10 +268,27 @@ router.get("/scan", async (req, res, next) => {
 router.post("/", async (req, res, next) => {
   try {
     const opNumber = (req.body?.opNumber || "").toString().trim().toUpperCase();
-    const lotNumber = (req.body?.lotNumber || "").toString().trim();
-    if (!opNumber || !lotNumber) {
-      return res.status(400).json({ error: "Numéro d'OP et numéro de lot requis" });
+    let lotNumber = (req.body?.lotNumber || "").toString().trim();
+    const productionDate = (req.body?.productionDate || "").toString().trim();
+    const plantCode = (req.body?.plantCode || "").toString().trim() || config.plantCode;
+    const line = (req.body?.line || "").toString().trim() || config.prodLine;
+    const flag = (req.body?.batchFlag || "").toString().trim();
+    const run = (req.body?.batchRun || "").toString().trim() || "1";
+
+    if (!opNumber) {
+      return res.status(400).json({ error: "Numéro d'OP requis" });
     }
+
+    if (!lotNumber && productionDate) {
+      lotNumber = buildLotNumber({ productionDate, plantCode, line, flag, run }) || "";
+    }
+    if (!lotNumber) {
+      return res.status(400).json({ error: "Numéro de lot requis (ou date de production pour le générer)" });
+    }
+
+    const prod = parseDateOnly(productionDate);
+    const productionYear = prod ? prod.getUTCFullYear() : null;
+    const julian = prod ? julianDay(productionDate) : null;
 
     let op = (await db.execute(sql`SELECT * FROM ops WHERE op_number = ${opNumber} LIMIT 1`)).rows[0];
     if (!op) {
@@ -219,7 +304,21 @@ router.post("/", async (req, res, next) => {
 
     const [created] = await db
       .insert(lots)
-      .values({ opId: op.id, lotNumber, createdBy: req.user.id })
+      .values({
+        opId: op.id,
+        lotNumber,
+        productionDate: prod ? productionDate : null,
+        productionYear,
+        julianDay: julian,
+        bestBefore: req.body?.bestBefore || null,
+        productReference: (req.body?.productReference || "").toString().trim() || null,
+        variety: (req.body?.variety || "").toString().trim() || null,
+        plantCode: plantCode || null,
+        line: line || null,
+        batchFlag: flag || null,
+        batchRun: run || null,
+        createdBy: req.user.id
+      })
       .returning();
 
     const row = await getLotRow(created.id);
@@ -234,13 +333,14 @@ router.get("/:id", async (req, res, next) => {
     const id = parseInt(req.params.id, 10);
     const row = await getLotRow(id);
     if (!row) return res.status(404).json({ error: "Lot introuvable" });
-    const [lotWeights, lotAnomalies, lotChecks, lotDocs] = await Promise.all([
+    const [lotWeights, lotAnomalies, lotChecks, lotDocs, lotMats] = await Promise.all([
       getWeights(id),
       getAnomalies(id),
       getQualityChecks(id),
-      getDocuments(id)
+      getDocuments(id),
+      getLotMaterials(id)
     ]);
-    res.json({ ...row, weights: lotWeights, anomalies: lotAnomalies, qualityChecks: lotChecks, documents: lotDocs });
+    res.json({ ...row, weights: lotWeights, anomalies: lotAnomalies, qualityChecks: lotChecks, documents: lotDocs, rawMaterials: lotMats });
   } catch (err) {
     next(err);
   }
@@ -254,16 +354,38 @@ router.patch("/:id", authorize("operator", "manager", "admin"), async (req, res,
     if (!canManageLot(req.user, lot)) {
       return res.status(403).json({ error: "Vous ne pouvez modifier que vos propres lots" });
     }
-    const { status } = req.body || {};
-    if (!VALID_STATUSES.includes(status)) {
-      return res.status(400).json({ error: "Statut invalide" });
-    }
+    const body = req.body || {};
     const updates = {
-      status,
-      updatedAt: new Date(),
-      completedAt: status === "completed" ? new Date() : null
+      updatedAt: new Date()
     };
-    await db.update(lots).set(updates).where(sql`${lots.id} = ${id}`);
+
+    if (body.status !== undefined) {
+      const status = body.status;
+      if (!VALID_STATUSES.includes(status)) {
+        return res.status(400).json({ error: "Statut invalide" });
+      }
+      updates.status = status;
+      updates.completedAt = status === "completed" ? new Date() : null;
+    }
+
+    // Mise à jour des données PF (productionDate recalcule année + jour julien)
+    if (body.productionDate !== undefined) {
+      const prod = parseDateOnly(String(body.productionDate || "").trim());
+      updates.productionDate = prod ? String(body.productionDate).trim() : null;
+      updates.productionYear = prod ? prod.getUTCFullYear() : null;
+      updates.julianDay = prod ? julianDay(String(body.productionDate).trim()) : null;
+    }
+    if (body.bestBefore !== undefined) updates.bestBefore = body.bestBefore || null;
+    if (body.productReference !== undefined) updates.productReference = String(body.productReference).trim() || null;
+    if (body.variety !== undefined) updates.variety = String(body.variety).trim() || null;
+    if (body.plantCode !== undefined) updates.plantCode = String(body.plantCode).trim() || null;
+    if (body.line !== undefined) updates.line = String(body.line).trim() || null;
+    if (body.batchFlag !== undefined) updates.batchFlag = String(body.batchFlag).trim() || null;
+    if (body.batchRun !== undefined) updates.batchRun = String(body.batchRun).trim() || null;
+
+    if (Object.keys(updates).length > 1) {
+      await db.update(lots).set(updates).where(sql`${lots.id} = ${id}`);
+    }
     res.json(await getLotRow(id));
   } catch (err) {
     next(err);
@@ -275,7 +397,54 @@ router.delete("/:id", authorize("manager", "admin"), async (req, res, next) => {
     const id = parseInt(req.params.id, 10);
     const [lot] = await db.select().from(lots).where(sql`${lots.id} = ${id}`).limit(1);
     if (!lot) return res.status(404).json({ error: "Lot introuvable" });
+    await db.delete(lotRawMaterials).where(sql`${lotRawMaterials.lotId} = ${id}`);
     await db.delete(lots).where(sql`${lots.id} = ${id}`);
+    res.status(204).end();
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/:id/raw-materials", async (req, res, next) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const rawMaterialId = parseInt(req.body?.rawMaterialId, 10);
+    const [lot] = await db.select().from(lots).where(sql`${lots.id} = ${id}`).limit(1);
+    if (!lot) return res.status(404).json({ error: "Lot introuvable" });
+    if (!canManageLot(req.user, lot)) {
+      return res.status(403).json({ error: "Vous ne pouvez modifier que vos propres lots" });
+    }
+    const [mat] = await db.select().from(rawMaterials).where(sql`${rawMaterials.id} = ${rawMaterialId}`).limit(1);
+    if (!mat) return res.status(404).json({ error: "Lot matière première introuvable" });
+    const [existing] = await db
+      .select()
+      .from(lotRawMaterials)
+      .where(sql`${lotRawMaterials.lotId} = ${id} AND ${lotRawMaterials.rawMaterialId} = ${rawMaterialId}`)
+      .limit(1);
+    if (existing) return res.status(409).json({ error: "Ce lot MP est déjà lié à ce lot PF" });
+    await db.insert(lotRawMaterials).values({ lotId: id, rawMaterialId, createdBy: req.user.id });
+    res.status(201).json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.delete("/:id/raw-materials/:matId", async (req, res, next) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const matId = parseInt(req.params.matId, 10);
+    const [lot] = await db.select().from(lots).where(sql`${lots.id} = ${id}`).limit(1);
+    if (!lot) return res.status(404).json({ error: "Lot introuvable" });
+    if (!canManageLot(req.user, lot)) {
+      return res.status(403).json({ error: "Vous ne pouvez modifier que vos propres lots" });
+    }
+    const [rel] = await db
+      .select()
+      .from(lotRawMaterials)
+      .where(sql`${lotRawMaterials.lotId} = ${id} AND ${lotRawMaterials.rawMaterialId} = ${matId}`)
+      .limit(1);
+    if (!rel) return res.status(404).json({ error: "Liaison introuvable" });
+    await db.delete(lotRawMaterials).where(sql`${lotRawMaterials.id} = ${rel.id}`);
     res.status(204).end();
   } catch (err) {
     next(err);

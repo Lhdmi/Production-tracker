@@ -1,5 +1,5 @@
 import { NavLink, Link, Outlet, useNavigate } from "react-router-dom";
-import { Home, Search, AlertTriangle, LayoutDashboard, ShieldCheck, LogOut, UserCircle2 } from "lucide-react";
+import { Home, Search, AlertTriangle, LayoutDashboard, ShieldCheck, LogOut, UserCircle2, Boxes } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { ROLE_LABELS } from "../api";
 
@@ -7,6 +7,7 @@ function navItems(role) {
   const items = [
     { to: "/", label: "Accueil", icon: Home, end: true },
     { to: "/recherche", label: "Recherche", icon: Search },
+    { to: "/materiaux", label: "Matières", icon: Boxes },
     { to: "/anomalies", label: "Anomalies", icon: AlertTriangle }
   ];
   if (role === "manager" || role === "admin") {

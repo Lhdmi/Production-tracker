@@ -4,6 +4,7 @@ export const roleEnum = pgEnum("role", ["operator", "manager", "admin"]);
 export const lotStatusEnum = pgEnum("lot_status", ["in_progress", "completed", "anomaly"]);
 export const anomalyStatusEnum = pgEnum("anomaly_status", ["open", "validated", "rejected"]);
 export const severityEnum = pgEnum("severity", ["low", "medium", "high", "critical"]);
+export const materialStatusEnum = pgEnum("material_status", ["compliant", "non_compliant", "pending"]);
 
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
@@ -26,6 +27,17 @@ export const lots = pgTable("lots", {
   opId: integer("op_id").notNull().references(() => ops.id),
   lotNumber: varchar("lot_number", { length: 50 }).notNull(),
   status: lotStatusEnum("status").notNull().default("in_progress"),
+  // Données produit fini (PF) — traçabilité type yddd8861X1
+  productionDate: date("production_date"),
+  productionYear: integer("production_year"),
+  julianDay: integer("julian_day"),
+  bestBefore: date("best_before"),
+  productReference: varchar("product_reference", { length: 100 }),
+  variety: varchar("variety", { length: 120 }),
+  plantCode: varchar("plant_code", { length: 10 }),
+  line: varchar("line", { length: 10 }),
+  batchFlag: varchar("batch_flag", { length: 10 }),
+  batchRun: varchar("batch_run", { length: 10 }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   completedAt: timestamp("completed_at", { withTimezone: true }),
@@ -98,6 +110,31 @@ export const lotScanVerifications = pgTable("lot_scan_verifications", {
   scannedCode: varchar("scanned_code", { length: 255 }).notNull(),
   expectedCode: varchar("expected_code", { length: 255 }).notNull(),
   matched: boolean("matched").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  createdBy: integer("created_by").references(() => users.id)
+});
+
+// Matières premières (MP)
+export const rawMaterials = pgTable("raw_materials", {
+  id: serial("id").primaryKey(),
+  lotNumber: varchar("lot_number", { length: 50 }).notNull(),
+  otNumber: varchar("ot_number", { length: 50 }),
+  designation: text("designation"),
+  reference: varchar("reference", { length: 100 }),
+  bestBefore: date("best_before"),
+  productionDate: date("production_date"),
+  supplier: varchar("supplier", { length: 120 }),
+  quantity: numeric("quantity", { precision: 12, scale: 3 }),
+  qualityStatus: materialStatusEnum("quality_status").notNull().default("pending"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  createdBy: integer("created_by").references(() => users.id)
+});
+
+// Liaison lots PF ↔ lots MP (traçabilité)
+export const lotRawMaterials = pgTable("lot_raw_materials", {
+  id: serial("id").primaryKey(),
+  lotId: integer("lot_id").notNull().references(() => lots.id),
+  rawMaterialId: integer("raw_material_id").notNull().references(() => rawMaterials.id),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   createdBy: integer("created_by").references(() => users.id)
 });

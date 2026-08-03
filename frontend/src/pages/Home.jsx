@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Plus, FolderOpen, TrendingUp } from "lucide-react";
+import { Plus, FolderOpen, TrendingUp, Boxes } from "lucide-react";
 import { api } from "../api";
 import { useAuth } from "../context/AuthContext";
 import LotList from "../components/LotList";
@@ -49,6 +49,19 @@ export default function Home() {
           <div>
             <p className="text-xl font-black">Reprendre un lot existant</p>
             <p className="text-sm font-semibold text-slate-300">Recherche par OP, lot, date ou statut</p>
+          </div>
+        </Link>
+
+        <Link
+          to="/materiaux"
+          className="flex items-center gap-4 rounded-2xl bg-blue-700 p-5 text-white shadow-md transition active:scale-[0.98]"
+        >
+          <span className="flex size-14 shrink-0 items-center justify-center rounded-xl bg-white/20">
+            <Boxes className="size-8" />
+          </span>
+          <div>
+            <p className="text-xl font-black">Matières premières</p>
+            <p className="text-sm font-semibold text-blue-100">Enregistrer un lot MP et ses données</p>
           </div>
         </Link>
       </section>

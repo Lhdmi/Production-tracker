@@ -2,9 +2,9 @@ import { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import {
   Scale, Trash2, AlertTriangle, CheckCircle2, RotateCcw, Clock,
-  User, Package
+  User, Package, Boxes, Plus, Search, CalendarDays, Loader2
 } from "lucide-react";
-import { api, formatDateTime } from "../api";
+import { api, formatDateTime, formatDate, MATERIAL_STATUS } from "../api";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../components/Toast";
 import { LotBadge, AnomalyBadge, SeverityBadge } from "../components/Badge";
@@ -28,6 +28,10 @@ export default function LotDetail() {
   const [savingWeight, setSavingWeight] = useState(false);
   const [confirm, setConfirm] = useState(null);
   const [batchVerified, setBatchVerified] = useState(false);
+  const [matOpen, setMatOpen] = useState(false);
+  const [matQuery, setMatQuery] = useState("");
+  const [matResults, setMatResults] = useState(null);
+  const [matLinking, setMatLinking] = useState(false);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -98,6 +102,44 @@ export default function LotDetail() {
     }
   }
 
+  function searchMaterials(q) {
+    setMatQuery(q);
+    if (q.trim().length < 2) {
+      setMatResults(null);
+      return;
+    }
+    api
+      .get(`/api/materials?q=${encodeURIComponent(q.trim())}&pageSize=15`)
+      .then((d) => setMatResults(d.rows))
+      .catch(() => setMatResults([]));
+  }
+
+  async function linkMaterial(matId) {
+    setMatLinking(true);
+    try {
+      await api.post(`/api/lots/${id}/raw-materials`, { rawMaterialId: matId });
+      toast.success("Lot MP lié au lot PF");
+      setMatOpen(false);
+      setMatQuery("");
+      setMatResults(null);
+      await load();
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setMatLinking(false);
+    }
+  }
+
+  async function unlinkMaterial(matId) {
+    try {
+      await api.del(`/api/lots/${id}/raw-materials/${matId}`);
+      toast.success("Lot MP délié");
+      await load();
+    } catch (err) {
+      toast.error(err.message);
+    }
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <header className="rounded-2xl bg-slate-900 p-5 text-white shadow-md">
@@ -121,6 +163,39 @@ export default function LotDetail() {
             </span>
           )}
         </div>
+        {lot.productionDate && (
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            <div className="rounded-xl bg-white/10 p-2.5">
+              <p className="text-[11px] font-bold uppercase text-slate-400">Date de production</p>
+              <p className="text-sm font-black">
+                {formatDate(lot.productionDate)}
+                {lot.julianDay != null && (
+                  <span className="ml-1.5 text-amber-300">J{lot.julianDay}</span>
+                )}
+              </p>
+            </div>
+            <div className="rounded-xl bg-white/10 p-2.5">
+              <p className="text-[11px] font-bold uppercase text-slate-400">Best before</p>
+              <p className="text-sm font-black">{formatDate(lot.bestBefore)}</p>
+            </div>
+            <div className="rounded-xl bg-white/10 p-2.5">
+              <p className="text-[11px] font-bold uppercase text-slate-400">Référence / Variété</p>
+              <p className="truncate text-sm font-black">
+                {lot.productReference || "—"}
+                {lot.variety && <span className="text-slate-300"> · {lot.variety}</span>}
+              </p>
+            </div>
+            <div className="rounded-xl bg-white/10 p-2.5">
+              <p className="text-[11px] font-bold uppercase text-slate-400">Usine · Ligne · Indic.</p>
+              <p className="font-mono text-sm font-black">
+                {lot.plantCode || "—"}
+                {lot.line ? ` · ${lot.line}` : ""}
+                {lot.batchFlag ? ` · ${lot.batchFlag}` : ""}
+                {lot.batchRun ? ` · ${lot.batchRun}` : ""}
+              </p>
+            </div>
+          </div>
+        )}
       </header>
 
       <BatchVerification
@@ -214,6 +289,67 @@ export default function LotDetail() {
 
       <QualityChecklist lotId={lot.id} canManage={canManage} existing={lot.qualityChecks || []} onSaved={load} />
 
+      <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="flex items-center gap-2 text-lg font-black text-slate-900">
+            <Boxes className="size-5 text-amber-500" />
+            Matières premières ({lot.rawMaterials?.length || 0})
+          </h2>
+          {canManage && (
+            <button
+              onClick={() => {
+                setMatOpen(true);
+                setMatQuery("");
+                setMatResults(null);
+              }}
+              className="flex items-center gap-1 rounded-xl bg-slate-900 px-3 py-2 text-xs font-black text-white active:scale-95"
+            >
+              <Plus className="size-4" />
+              Ajouter
+            </button>
+          )}
+        </div>
+
+        {!lot.rawMaterials?.length && (
+          <p className="py-2 text-sm font-semibold text-slate-400">Aucun lot matière première lié.</p>
+        )}
+        <ul className="flex flex-col gap-3">
+          {lot.rawMaterials?.map((m) => {
+            const st = MATERIAL_STATUS[m.qualityStatus] || MATERIAL_STATUS.pending;
+            return (
+              <li key={m.id} className="rounded-xl border border-slate-200 p-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="font-mono text-base font-black text-slate-900">{m.lotNumber}</p>
+                    <p className="truncate text-xs font-semibold text-slate-500">
+                      {[m.designation, m.reference, m.otNumber && `OT ${m.otNumber}`, m.supplier].filter(Boolean).join(" · ")}
+                    </p>
+                    <p className="mt-0.5 text-xs font-semibold text-slate-400">
+                      {m.quantity != null && <span>{m.quantity} kg · </span>}
+                      {m.productionDate && <span>Prod. {formatDate(m.productionDate)} · </span>}
+                      {m.bestBefore && <span>BB {formatDate(m.bestBefore)}</span>}
+                      {m.linkedByName && <span className="ml-1">· {m.linkedByName}</span>}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <span className={`rounded-full px-2.5 py-1 text-xs font-bold ring-1 ring-inset ${st.cls}`}>{st.label}</span>
+                    {canManage && (
+                      <button
+                        onClick={() => unlinkMaterial(m.id)}
+                        className="rounded-full p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                        aria-label="Délier ce lot MP"
+                      >
+                        <Trash2 className="size-4" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      </section>
+
       <LotDocuments lotId={lot.id} canManage={canManage} documents={lot.documents || []} onUploaded={load} />
 
       {(user.role === "manager" || user.role === "admin") && <LotHistory lotId={lot.id} />}
@@ -291,11 +427,7 @@ export default function LotDetail() {
         Retour à la liste des lots
       </Link>
 
-      <Modal
-        open={confirm !== null}
-        onClose={() => setConfirm(null)}
-        title={confirm?.type === "complete" ? "Terminer le lot ?" : confirm?.type === "delete" ? "Supprimer le lot ?" : "Supprimer le relevé ?"}
-      >
+      <Modal open={confirm !== null} onClose={() => setConfirm(null)} title={confirm?.type === "complete" ? "Terminer le lot ?" : confirm?.type === "delete" ? "Supprimer le lot ?" : "Supprimer le relevé ?"}>
         <p className="text-slate-600">
           {confirm?.type === "complete"
             ? "Le lot passera au statut « Terminé ». Vous pourrez le reprendre à tout moment."
@@ -324,6 +456,63 @@ export default function LotDetail() {
           >
             {confirm?.type === "complete" ? "Terminer" : "Supprimer"}
           </button>
+        </div>
+      </Modal>
+
+      <Modal open={matOpen} onClose={() => setMatOpen(false)} title="Lier un lot matière première">
+        <div className="flex flex-col gap-3">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 size-5 -translate-y-1/2 text-slate-400" />
+            <input
+              autoFocus
+              value={matQuery}
+              onChange={(e) => searchMaterials(e.target.value)}
+              placeholder="Rechercher par n° lot, désignation, référence…"
+              className="w-full rounded-xl border-2 border-slate-300 py-3 pl-10 pr-3 text-sm font-semibold focus:border-amber-400 focus:outline-none"
+            />
+          </div>
+
+          {matResults === null ? (
+            <p className="py-3 text-center text-sm font-semibold text-slate-400">
+              Saisissez au moins 2 caractères pour rechercher.
+            </p>
+          ) : matResults.length === 0 ? (
+            <p className="py-3 text-center text-sm font-semibold text-slate-400">Aucun lot MP trouvé.</p>
+          ) : (
+            <ul className="flex max-h-80 flex-col gap-2 overflow-y-auto">
+              {matResults.map((m) => {
+                const st = MATERIAL_STATUS[m.qualityStatus] || MATERIAL_STATUS.pending;
+                const already = lot.rawMaterials?.some((r) => r.id === m.id);
+                return (
+                  <li key={m.id} className="rounded-xl border border-slate-200 p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="font-mono text-sm font-black text-slate-900">{m.lotNumber}</p>
+                        <p className="truncate text-xs font-semibold text-slate-500">
+                          {[m.designation, m.reference, m.supplier].filter(Boolean).join(" · ")}
+                        </p>
+                      </div>
+                      <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold ring-1 ring-inset ${st.cls}`}>
+                        {st.label}
+                      </span>
+                    </div>
+                    {already ? (
+                      <p className="mt-2 text-xs font-bold text-emerald-600">Déjà lié</p>
+                    ) : (
+                      <button
+                        onClick={() => linkMaterial(m.id)}
+                        disabled={matLinking}
+                        className="mt-2 w-full rounded-lg bg-slate-900 px-3 py-2 text-xs font-black text-white disabled:opacity-50 active:scale-[0.98]"
+                      >
+                        {matLinking ? <Loader2 className="mx-auto size-4 animate-spin" /> : <CalendarDays className="mx-auto size-4" />}
+                        Lier ce lot MP
+                      </button>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </div>
       </Modal>
     </div>

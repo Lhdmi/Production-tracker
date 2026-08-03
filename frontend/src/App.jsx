@@ -11,6 +11,7 @@ import AnomalyForm from "./pages/AnomalyForm";
 import Search from "./pages/Search";
 import Dashboard from "./pages/Dashboard";
 import Anomalies from "./pages/Anomalies";
+import Materials from "./pages/Materials";
 import Admin from "./pages/Admin";
 
 function RequireAuth({ children }) {
@@ -48,6 +49,7 @@ export default function App() {
           <Route path="/" element={<Home />} />
           <Route path="/lots/nouveau" element={<LotForm />} />
           <Route path="/lots/:id" element={<LotDetail />} />
+          <Route path="/materiaux" element={<Materials />} />
           <Route path="/anomalies/nouvelle" element={<AnomalyForm />} />
           <Route path="/recherche" element={<Search />} />
           <Route path="/anomalies" element={<Anomalies />} />

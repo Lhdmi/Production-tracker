@@ -16,6 +16,7 @@ import anomaliesRoutes, { lotAnomalyRouter } from "./routes/anomalies.js";
 import adminRoutes from "./routes/admin.js";
 import exportRoutes from "./routes/export.js";
 import checkpointsRoutes from "./routes/checkpoints.js";
+import materialsRoutes from "./routes/materials.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -101,6 +102,7 @@ app.use("/api/anomalies", anomaliesRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/export", exportRoutes);
 app.use("/api/quality/checkpoints", checkpointsRoutes);
+app.use("/api/materials", materialsRoutes);
 
 const frontendDist = path.join(__dirname, "../../frontend/dist");
 if (fs.existsSync(frontendDist)) {

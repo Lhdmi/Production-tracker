@@ -11,6 +11,9 @@ export const config = {
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || "12h",
   publicUrl: process.env.PUBLIC_URL || `http://localhost:${process.env.PORT || 3001}`,
   storageDriver: process.env.STORAGE_DRIVER || "local",
+  // Défauts pour la génération du numéro de lot PF (ydd8861X1)
+  plantCode: process.env.PLANT_CODE || "886",
+  prodLine: process.env.PROD_LINE || "1",
   // Origines autorisées pour CORS (séparées par des virgules). Si vide,
   // seule la PUBLIC_URL (et localhost en dev) sont autorisées.
   allowedOrigins: (process.env.ALLOWED_ORIGINS || "")
