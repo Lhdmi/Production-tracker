@@ -27,15 +27,23 @@ openssl rand -hex 24
 openssl rand -hex 32
 ```
 
-Complétez `k8s/secret.yaml` avec ces valeurs, puis appliquez :
+Le fichier `k8s/secret.yaml` n'est **pas versionné** (ni `db-password` ni `jwt-secret`
+ne doivent apparaître dans le dépôt public). Créez-le localement à partir du modèle :
+
+```bash
+cp k8s/secret.example.yaml k8s/secret.yaml
+```
+
+Complétez `k8s/secret.yaml` avec les valeurs générées ci-dessus, puis appliquez :
 
 ```bash
 kubectl apply -f k8s/namespace.yaml
 kubectl apply -f k8s/secret.yaml
 ```
 
-> ⚠️ `k8s/secret.yaml` contient des mots de passe **en clair** dans le dépôt.
-> Pour la production, préférez Sealed Secrets, External Secrets ou Vault.
+> Pour la production, préférez à terme **Sealed Secrets, External Secrets ou Vault**
+> afin de versionner les secrets chiffrés ; le modèle `secret.example.yaml` reste
+> la solution simple pour l'usage interne.
 
 ## 2. Pousser l'image (CI/CD)
 

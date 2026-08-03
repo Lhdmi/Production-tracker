@@ -9,6 +9,9 @@ frontend/dist/
 .env
 .env.local
 
+# Secrets Kubernetes (le modèle secret.example.yaml est versionné)
+k8s/secret.yaml
+
 # Uploaded files
 backend/uploads/
 
