@@ -39,11 +39,23 @@ async function main() {
     console.log(`+ utilisateur créé : ${u.email} / ${u.password} (${u.role})`);
   }
 
+  // Suppression idempotente des points de contrôle obsolètes (la température
+  // n'existe pas dans nos process).
+  const { rows: obsoleteCps } = await pool.query(
+    "SELECT id FROM quality_checkpoints WHERE name = $1",
+    ["Température de process"]
+  );
+  for (const cp of obsoleteCps) {
+    await pool.query("DELETE FROM quality_checks WHERE checkpoint_id = $1", [cp.id]);
+    await pool.query("DELETE FROM quality_checkpoints WHERE id = $1", [cp.id]);
+    console.log(`- point de contrôle supprimé : Température de process (#${cp.id})`);
+  }
+
   const { rows: checkpointCount } = await pool.query("SELECT count(*)::int AS n FROM quality_checkpoints");
   if (checkpointCount[0].n === 0) {
     const checkpoints = [
-      ["Température de process", "Température relevée conforme au prérequis du process.", 1],
-      ["Aspect visuel", "Absence de défauts visibles (couleur, texture, traces).", 2],
+      ["Vide de ligne", "La ligne est-elle vide de tout autre élément de la production précédente ?", 1],
+      ["Contrôle du nettoyage", "Les équipements et le poste de travail sont-ils propres et rangés ?", 2],
       ["Conformité emballage", "Emballage, étiquetage et marquage conformes.", 3],
       ["Masse / poids", "Poids dans la plage cible de l'OP.", 4],
       ["Traçabilité / lots matière", "Références matières et numéros de lot tracés.", 5]

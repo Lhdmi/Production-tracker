@@ -150,7 +150,7 @@ export default function QualityCheckpoints() {
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
                 required
-                placeholder="Ex : Température de process"
+                placeholder="Ex : Contrôle visuel"
                 className="w-full rounded-xl border-2 border-slate-300 px-4 py-3 text-lg focus:border-amber-400 focus:outline-none"
               />
             </div>
