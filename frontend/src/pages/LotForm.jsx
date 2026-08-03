@@ -1,10 +1,22 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { PackagePlus, ArrowRight, AlertTriangle, Wand2, CalendarDays } from "lucide-react";
+import { PackagePlus, ArrowRight, AlertTriangle, Wand2, CalendarDays, Users, Scale } from "lucide-react";
 import { api } from "../api";
 import { useToast } from "../components/Toast";
 
 const DEFAULT_RUN = "1";
+
+const SHIFT_OPTIONS = [
+  { value: "morning", label: "Matin" },
+  { value: "afternoon", label: "Après-midi" },
+  { value: "night", label: "Nuit" }
+];
+
+const NET_WEIGHT_OPTIONS = [
+  { value: "complete", label: "Complet" },
+  { value: "compliant", label: "Conforme" },
+  { value: "non_compliant", label: "Non conforme" }
+];
 
 export default function LotForm() {
   const navigate = useNavigate();
@@ -19,6 +31,11 @@ export default function LotForm() {
   const [line, setLine] = useState("");
   const [batchFlag, setBatchFlag] = useState("");
   const [batchRun, setBatchRun] = useState(DEFAULT_RUN);
+  const [shift, setShift] = useState("");
+  const [otNumber, setOtNumber] = useState("");
+  const [producedQuantity, setProducedQuantity] = useState("");
+  const [palletsQuantity, setPalletsQuantity] = useState("");
+  const [netWeightStatus, setNetWeightStatus] = useState("");
   const [lotNumber, setLotNumber] = useState("");
   const [preview, setPreview] = useState(null);
   const [error, setError] = useState("");
@@ -75,7 +92,12 @@ export default function LotForm() {
         plantCode: plantCode.trim() || null,
         line: line.trim() || null,
         batchFlag: batchFlag.trim() || null,
-        batchRun: batchRun.trim() || DEFAULT_RUN
+        batchRun: batchRun.trim() || DEFAULT_RUN,
+        shift: shift || null,
+        otNumber: otNumber.trim() || null,
+        producedQuantity: producedQuantity === "" ? null : parseInt(producedQuantity, 10),
+        palletsQuantity: palletsQuantity === "" ? null : parseInt(palletsQuantity, 10),
+        netWeightStatus: netWeightStatus || null
       };
       if (!lotTouched.current && preview?.lotNumber) body.lotNumber = preview.lotNumber;
       const lot = await api.post("/api/lots", body);
@@ -194,6 +216,93 @@ export default function LotForm() {
             className="w-full rounded-xl border-2 border-slate-300 px-4 py-3.5 text-lg font-bold focus:border-amber-400 focus:outline-none"
             placeholder="EX : Guatemala"
           />
+        </div>
+
+        <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-200">
+          <p className="mb-2 flex items-center gap-1.5 text-xs font-black uppercase text-slate-400">
+            <Users className="size-3.5" /> Données de production
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label htmlFor="shift" className="mb-1 block text-sm font-bold text-slate-700">
+                Équipe
+              </label>
+              <select
+                id="shift"
+                value={shift}
+                onChange={(e) => setShift(e.target.value)}
+                className="w-full rounded-xl border-2 border-slate-300 bg-white px-3 py-3 text-lg font-bold focus:border-amber-400 focus:outline-none"
+              >
+                <option value="">—</option>
+                {SHIFT_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label htmlFor="ot" className="mb-1 block text-sm font-bold text-slate-700">
+                N° OT
+              </label>
+              <input
+                id="ot"
+                value={otNumber}
+                onChange={(e) => setOtNumber(e.target.value.toUpperCase())}
+                autoCapitalize="characters"
+                className="w-full rounded-xl border-2 border-slate-300 px-3 py-3 text-lg font-bold uppercase focus:border-amber-400 focus:outline-none"
+                placeholder="EX : OT-2026-118"
+              />
+            </div>
+            <div>
+              <label htmlFor="qty" className="mb-1 block text-sm font-bold text-slate-700">
+                Quantité produite (pièces)
+              </label>
+              <input
+                id="qty"
+                type="number"
+                min={0}
+                inputMode="numeric"
+                value={producedQuantity}
+                onChange={(e) => setProducedQuantity(e.target.value)}
+                className="w-full rounded-xl border-2 border-slate-300 px-3 py-3 text-lg font-bold focus:border-amber-400 focus:outline-none"
+                placeholder="0"
+              />
+            </div>
+            <div>
+              <label htmlFor="pal" className="mb-1 block text-sm font-bold text-slate-700">
+                Nombre de palettes
+              </label>
+              <input
+                id="pal"
+                type="number"
+                min={0}
+                inputMode="numeric"
+                value={palletsQuantity}
+                onChange={(e) => setPalletsQuantity(e.target.value)}
+                className="w-full rounded-xl border-2 border-slate-300 px-3 py-3 text-lg font-bold focus:border-amber-400 focus:outline-none"
+                placeholder="0"
+              />
+            </div>
+          </div>
+          <div className="mt-3">
+            <label htmlFor="nw" className="mb-1 flex items-center gap-1.5 text-sm font-bold text-slate-700">
+              <Scale className="size-3.5 text-slate-400" /> Poids net (fichier Excel)
+            </label>
+            <select
+              id="nw"
+              value={netWeightStatus}
+              onChange={(e) => setNetWeightStatus(e.target.value)}
+              className="w-full rounded-xl border-2 border-slate-300 bg-white px-3 py-3 text-lg font-bold focus:border-amber-400 focus:outline-none"
+            >
+              <option value="">—</option>
+              {NET_WEIGHT_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
         <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-200">

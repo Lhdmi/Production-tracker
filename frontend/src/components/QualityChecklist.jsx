@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { ClipboardCheck, Loader2, AlertTriangle, CheckCircle2, MinusCircle } from "lucide-react";
+import { ClipboardCheck, Loader2, AlertTriangle, CheckCircle2, MinusCircle, UserCheck } from "lucide-react";
 import { api, CHECK_STATUS } from "../api";
 import { useToast } from "./Toast";
 import { Spinner, ErrorState } from "./States";
+import { useAuth } from "../context/AuthContext";
 
 const OPTIONS = [
   { value: "compliant", label: "Conforme", cls: "data-[on=true]:bg-emerald-600 data-[on=true]:text-white" },
@@ -13,12 +14,14 @@ const OPTIONS = [
 
 export default function QualityChecklist({ lotId, canManage, existing, onSaved }) {
   const toast = useToast();
+  const { user } = useAuth();
   const [checkpoints, setCheckpoints] = useState(null);
   const [error, setError] = useState("");
   const [values, setValues] = useState({});
   const [comments, setComments] = useState({});
   const [saving, setSaving] = useState(false);
   const [lastResult, setLastResult] = useState(null);
+  const [signing, setSigning] = useState(null);
 
   const byCheckpoint = useMemo(() => {
     const map = {};
@@ -52,6 +55,19 @@ export default function QualityChecklist({ lotId, canManage, existing, onSaved }
   if (!checkpoints) return <Spinner label="Chargement de la checklist…" />;
 
   const dirtyCount = checkpoints.filter((cp) => values[cp.id]).length;
+
+  async function signSecondVisa(check) {
+    setSigning(check.id);
+    try {
+      await api.post(`/api/lots/${lotId}/quality-checks/${check.id}/second-visa`);
+      toast.success("Second visa apposé");
+      if (onSaved) onSaved();
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setSigning(null);
+    }
+  }
 
   async function save() {
     const checks = checkpoints
@@ -101,7 +117,14 @@ export default function QualityChecklist({ lotId, canManage, existing, onSaved }
             <li key={cp.id} className="rounded-xl border border-slate-200 p-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="font-bold text-slate-900">{cp.name}</p>
+                  <p className="font-bold text-slate-900">
+                    {cp.name}
+                    {cp.requires_second_visa && (
+                      <span className="ml-2 inline-block rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-black text-violet-700 ring-1 ring-inset ring-violet-200">
+                        Double visa
+                      </span>
+                    )}
+                  </p>
                   {cp.description && <p className="text-xs font-semibold text-slate-500">{cp.description}</p>}
                 </div>
                 <div className="flex gap-1.5">
@@ -152,7 +175,26 @@ export default function QualityChecklist({ lotId, canManage, existing, onSaved }
               {prev && prev.id && (
                 <p className="mt-1 text-[11px] font-semibold text-slate-400">
                   Dernier contrôle : {prev.createdByName} · {new Date(prev.createdAt).toLocaleString("fr-FR")}
+                  {prev.requiresSecondVisa &&
+                    (prev.secondValidatedByName ? (
+                      <>
+                        {" · "}2e visa : {prev.secondValidatedByName} · {new Date(prev.secondValidatedAt).toLocaleString("fr-FR")}
+                      </>
+                    ) : (
+                      <span className="text-amber-600"> · 2e visa en attente</span>
+                    ))}
                 </p>
+              )}
+
+              {prev && prev.requiresSecondVisa && !prev.secondValidatedByName && prev.createdById !== user?.id && (
+                <button
+                  onClick={() => signSecondVisa(prev)}
+                  disabled={signing === prev.id}
+                  className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg bg-violet-600 px-3 py-2 text-xs font-black text-white active:scale-[0.99] disabled:opacity-50"
+                >
+                  {signing === prev.id ? <Loader2 className="size-4 animate-spin" /> : <UserCheck className="size-4" />}
+                  Signer le 2e visa (vous)
+                </button>
               )}
             </li>
           );

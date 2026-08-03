@@ -138,3 +138,15 @@ export const MATERIAL_STATUS = {
   non_compliant: { label: "Non conforme", cls: "bg-rose-100 text-rose-800 ring-rose-200" },
   pending: { label: "En attente", cls: "bg-amber-100 text-amber-800 ring-amber-200" }
 };
+
+export const SHIFT_LABELS = {
+  morning: "Matin",
+  afternoon: "Après-midi",
+  night: "Nuit"
+};
+
+export const NET_WEIGHT_LABELS = {
+  complete: "Complet",
+  compliant: "Conforme",
+  non_compliant: "Non conforme"
+};

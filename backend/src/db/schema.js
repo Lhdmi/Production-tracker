@@ -5,6 +5,9 @@ export const lotStatusEnum = pgEnum("lot_status", ["in_progress", "completed", "
 export const anomalyStatusEnum = pgEnum("anomaly_status", ["open", "validated", "rejected"]);
 export const severityEnum = pgEnum("severity", ["low", "medium", "high", "critical"]);
 export const materialStatusEnum = pgEnum("material_status", ["compliant", "non_compliant", "pending"]);
+export const shiftEnum = pgEnum("shift", ["morning", "afternoon", "night"]);
+export const netWeightStatusEnum = pgEnum("net_weight_status", ["complete", "compliant", "non_compliant"]);
+export const sessionTypeEnum = pgEnum("session_type", ["sortie_machine", "carton_palette"]);
 
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
@@ -38,6 +41,12 @@ export const lots = pgTable("lots", {
   line: varchar("line", { length: 10 }),
   batchFlag: varchar("batch_flag", { length: 10 }),
   batchRun: varchar("batch_run", { length: 10 }),
+  // Données de suivi (E1)
+  shift: shiftEnum("shift"),
+  otNumber: varchar("ot_number", { length: 50 }),
+  producedQuantity: integer("produced_quantity"),
+  palletsQuantity: integer("pallets_quantity"),
+  netWeightStatus: netWeightStatusEnum("net_weight_status"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   completedAt: timestamp("completed_at", { withTimezone: true }),
@@ -80,6 +89,7 @@ export const qualityCheckpoints = pgTable("quality_checkpoints", {
   name: varchar("name", { length: 120 }).notNull(),
   description: text("description"),
   active: boolean("active").notNull().default(true),
+  requiresSecondVisa: boolean("requires_second_visa").notNull().default(false),
   sortOrder: integer("sort_order").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
 });
@@ -90,8 +100,44 @@ export const qualityChecks = pgTable("quality_checks", {
   checkpointId: integer("checkpoint_id").notNull().references(() => qualityCheckpoints.id),
   status: checkStatusEnum("status").notNull(),
   comment: text("comment"),
+  secondValidatedBy: integer("second_validated_by").references(() => users.id),
+  secondValidatedAt: timestamp("second_validated_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   createdBy: integer("created_by").references(() => users.id)
+});
+
+// Sessions de contrôles structurés répétés (sortie machine, carton & palette)
+export const qualityCheckSessions = pgTable("quality_check_sessions", {
+  id: serial("id").primaryKey(),
+  lotId: integer("lot_id").notNull().references(() => lots.id),
+  type: sessionTypeEnum("type").notNull(),
+  recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
+  cartonNumber: varchar("carton_number", { length: 50 }),
+  comment: text("comment"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  createdBy: integer("created_by").references(() => users.id)
+});
+
+export const qualityCheckSessionItems = pgTable("quality_check_session_items", {
+  id: serial("id").primaryKey(),
+  sessionId: integer("session_id").notNull().references(() => qualityCheckSessions.id),
+  name: varchar("name", { length: 120 }).notNull(),
+  status: checkStatusEnum("status").notNull(),
+  comment: text("comment"),
+  createdBy: integer("created_by").references(() => users.id)
+});
+
+// Libération du produit (fin de lot)
+export const lotReleases = pgTable("lot_releases", {
+  id: serial("id").primaryKey(),
+  lotId: integer("lot_id").notNull().unique().references(() => lots.id),
+  recordStatus: checkStatusEnum("record_status").notNull(),
+  resultsStatus: checkStatusEnum("results_status").notNull(),
+  netWeightStatus: checkStatusEnum("net_weight_status").notNull(),
+  released: boolean("released").notNull(),
+  comment: text("comment"),
+  releasedAt: timestamp("released_at", { withTimezone: true }).notNull().defaultNow(),
+  releasedBy: integer("released_by").references(() => users.id)
 });
 
 export const lotDocuments = pgTable("lot_documents", {

@@ -24,11 +24,11 @@ export default function QualityCheckpoints() {
   useEffect(load, []);
 
   function openCreate() {
-    setForm({ name: "", description: "", sortOrder: 0, active: true, editing: false });
+    setForm({ name: "", description: "", sortOrder: 0, active: true, requiresSecondVisa: false, editing: false });
   }
 
   function openEdit(cp) {
-    setForm({ name: cp.name, description: cp.description || "", sortOrder: cp.sort_order, active: cp.active, editing: true, id: cp.id });
+    setForm({ name: cp.name, description: cp.description || "", sortOrder: cp.sort_order, active: cp.active, requiresSecondVisa: cp.requires_second_visa, editing: true, id: cp.id });
   }
 
   async function submit(e) {
@@ -40,7 +40,8 @@ export default function QualityCheckpoints() {
           name: form.name,
           description: form.description,
           sortOrder: form.sortOrder,
-          active: form.active
+          active: form.active,
+          requiresSecondVisa: form.requiresSecondVisa
         });
         toast.success("Point de contrôle modifié");
       } else {
@@ -48,7 +49,8 @@ export default function QualityCheckpoints() {
           name: form.name,
           description: form.description,
           sortOrder: form.sortOrder,
-          active: form.active
+          active: form.active,
+          requiresSecondVisa: form.requiresSecondVisa
         });
         toast.success("Point de contrôle créé");
       }
@@ -64,6 +66,15 @@ export default function QualityCheckpoints() {
   async function toggleActive(cp) {
     try {
       await api.patch(`/api/quality/checkpoints/${cp.id}`, { active: !cp.active });
+      load();
+    } catch (err) {
+      toast.error(err.message);
+    }
+  }
+
+  async function toggleSecondVisa(cp) {
+    try {
+      await api.patch(`/api/quality/checkpoints/${cp.id}`, { requiresSecondVisa: !cp.requires_second_visa });
       load();
     } catch (err) {
       toast.error(err.message);
@@ -112,6 +123,11 @@ export default function QualityCheckpoints() {
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
+                  {cp.requires_second_visa && (
+                    <span className="rounded-full bg-violet-50 px-2.5 py-1 text-xs font-bold text-violet-700 ring-1 ring-inset ring-violet-200">
+                      Double visa
+                    </span>
+                  )}
                   <span
                     className={`rounded-full px-2.5 py-1 text-xs font-bold ring-1 ring-inset ${
                       cp.active ? "bg-emerald-50 text-emerald-800 ring-emerald-200" : "bg-slate-100 text-slate-500 ring-slate-300"
@@ -119,6 +135,9 @@ export default function QualityCheckpoints() {
                   >
                     {cp.active ? "Actif" : "Inactif"}
                   </span>
+                  <button onClick={() => toggleSecondVisa(cp)} className="rounded-full px-3 py-1.5 text-xs font-bold text-violet-600 ring-1 ring-violet-300 hover:bg-violet-50" aria-label="Basculer double visa">
+                    {cp.requires_second_visa ? "1 visa" : "Double visa"}
+                  </button>
                   <button onClick={() => openEdit(cp)} className="rounded-full p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label="Modifier">
                     <Pencil className="size-4" />
                   </button>
@@ -187,6 +206,18 @@ export default function QualityCheckpoints() {
                   {form.active ? "Actif" : "Inactif"}
                 </button>
               </div>
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-bold text-slate-700">Double visa</label>
+              <button
+                type="button"
+                onClick={() => setForm({ ...form, requiresSecondVisa: !form.requiresSecondVisa })}
+                className={`w-full rounded-xl px-4 py-3 text-sm font-bold ring-2 transition ${
+                  form.requiresSecondVisa ? "bg-violet-600 text-white ring-violet-600" : "bg-white text-slate-600 ring-slate-300"
+                }`}
+              >
+                {form.requiresSecondVisa ? "2 visas requis (2e utilisateur)" : "1 visa suffisant"}
+              </button>
             </div>
             <button
               type="submit"

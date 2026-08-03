@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { sql } from "drizzle-orm";
 import { pool, db } from "../db/client.js";
-import { lots, weights, anomalies, qualityChecks as checksTable, lotDocuments, lotScanVerifications, rawMaterials, lotRawMaterials } from "../db/schema.js";
+import { lots, weights, anomalies, photos, qualityChecks as checksTable, qualityCheckpoints, lotDocuments, lotScanVerifications, rawMaterials, lotRawMaterials, qualityCheckSessions, qualityCheckSessionItems, lotReleases } from "../db/schema.js";
 import { authenticate, authorize } from "../middleware/auth.js";
 import { uploadImage, toPublicUrl } from "../utils/storage.js";
 import { runOcr } from "../utils/ocr.js";
@@ -27,6 +27,8 @@ async function getLotRow(id) {
              l.product_reference AS "productReference", l.variety,
              l.plant_code AS "plantCode", l.line, l.batch_flag AS "batchFlag",
              l.batch_run AS "batchRun",
+             l.shift, l.ot_number AS "otNumber", l.produced_quantity AS "producedQuantity",
+             l.pallets_quantity AS "palletsQuantity", l.net_weight_status AS "netWeightStatus",
              l.op_id AS "opId", o.op_number AS "opNumber",
              u.name AS "createdByName", u.id AS "createdById"
       FROM lots l
@@ -75,10 +77,13 @@ async function getQualityChecks(lotId) {
     SELECT qc.id, qc.status, qc.comment, qc.created_at AS "createdAt",
            qc.checkpoint_id AS "checkpointId",
            qcp.name AS "checkpointName",
-           u.name AS "createdByName"
+           qcp.requires_second_visa AS "requiresSecondVisa",
+           u.name AS "createdByName", u.id AS "createdById",
+           su.name AS "secondValidatedByName", qc.second_validated_at AS "secondValidatedAt"
     FROM quality_checks qc
     JOIN quality_checkpoints qcp ON qcp.id = qc.checkpoint_id
     LEFT JOIN users u ON u.id = qc.created_by
+    LEFT JOIN users su ON su.id = qc.second_validated_by
     WHERE qc.lot_id = $1
     ORDER BY qc.created_at DESC, qc.id DESC
   `, [lotId]);
@@ -317,6 +322,11 @@ router.post("/", async (req, res, next) => {
         line: line || null,
         batchFlag: flag || null,
         batchRun: run || null,
+        shift: req.body?.shift || null,
+        otNumber: (req.body?.otNumber || "").toString().trim() || null,
+        producedQuantity: req.body?.producedQuantity === "" || req.body?.producedQuantity == null ? null : parseInt(req.body.producedQuantity, 10),
+        palletsQuantity: req.body?.palletsQuantity === "" || req.body?.palletsQuantity == null ? null : parseInt(req.body.palletsQuantity, 10),
+        netWeightStatus: req.body?.netWeightStatus || null,
         createdBy: req.user.id
       })
       .returning();
@@ -382,6 +392,39 @@ router.patch("/:id", authorize("operator", "manager", "admin"), async (req, res,
     if (body.line !== undefined) updates.line = String(body.line).trim() || null;
     if (body.batchFlag !== undefined) updates.batchFlag = String(body.batchFlag).trim() || null;
     if (body.batchRun !== undefined) updates.batchRun = String(body.batchRun).trim() || null;
+    if (body.shift !== undefined) {
+      const shift = String(body.shift || "").trim();
+      if (shift && !["morning", "afternoon", "night"].includes(shift)) {
+        return res.status(400).json({ error: "Équipe invalide" });
+      }
+      updates.shift = shift || null;
+    }
+    if (body.otNumber !== undefined) updates.otNumber = String(body.otNumber).trim() || null;
+    if (body.producedQuantity !== undefined) {
+      if (body.producedQuantity === "" || body.producedQuantity == null) {
+        updates.producedQuantity = null;
+      } else {
+        const qty = parseInt(body.producedQuantity, 10);
+        if (!Number.isInteger(qty) || qty < 0) return res.status(400).json({ error: "Quantité produite invalide" });
+        updates.producedQuantity = qty;
+      }
+    }
+    if (body.palletsQuantity !== undefined) {
+      if (body.palletsQuantity === "" || body.palletsQuantity == null) {
+        updates.palletsQuantity = null;
+      } else {
+        const qty = parseInt(body.palletsQuantity, 10);
+        if (!Number.isInteger(qty) || qty < 0) return res.status(400).json({ error: "Nombre de palettes invalide" });
+        updates.palletsQuantity = qty;
+      }
+    }
+    if (body.netWeightStatus !== undefined) {
+      const nw = String(body.netWeightStatus || "").trim();
+      if (nw && !["complete", "compliant", "non_compliant"].includes(nw)) {
+        return res.status(400).json({ error: "Statut poids net invalide" });
+      }
+      updates.netWeightStatus = nw || null;
+    }
 
     if (Object.keys(updates).length > 1) {
       await db.update(lots).set(updates).where(sql`${lots.id} = ${id}`);
@@ -397,7 +440,23 @@ router.delete("/:id", authorize("manager", "admin"), async (req, res, next) => {
     const id = parseInt(req.params.id, 10);
     const [lot] = await db.select().from(lots).where(sql`${lots.id} = ${id}`).limit(1);
     if (!lot) return res.status(404).json({ error: "Lot introuvable" });
+
+    const sessions = await db.select().from(qualityCheckSessions).where(sql`${qualityCheckSessions.lotId} = ${id}`);
+    for (const s of sessions) {
+      await db.delete(qualityCheckSessionItems).where(sql`${qualityCheckSessionItems.sessionId} = ${s.id}`);
+    }
+    await db.delete(qualityCheckSessions).where(sql`${qualityCheckSessions.lotId} = ${id}`);
+    await db.delete(checksTable).where(sql`${checksTable.lotId} = ${id}`);
+    await db.delete(lotReleases).where(sql`${lotReleases.lotId} = ${id}`);
     await db.delete(lotRawMaterials).where(sql`${lotRawMaterials.lotId} = ${id}`);
+    await db.delete(lotScanVerifications).where(sql`${lotScanVerifications.lotId} = ${id}`);
+    await db.delete(lotDocuments).where(sql`${lotDocuments.lotId} = ${id}`);
+    const anoms = await db.select().from(anomalies).where(sql`${anomalies.lotId} = ${id}`);
+    for (const a of anoms) {
+      await db.delete(photos).where(sql`${photos.anomalyId} = ${a.id}`);
+    }
+    await db.delete(anomalies).where(sql`${anomalies.lotId} = ${id}`);
+    await db.delete(weights).where(sql`${weights.lotId} = ${id}`);
     await db.delete(lots).where(sql`${lots.id} = ${id}`);
     res.status(204).end();
   } catch (err) {
@@ -610,6 +669,44 @@ router.post("/:id/quality-checks", authorize("operator", "manager", "admin"), as
       anomalies: createdAnomalies,
       anomalyCreated: createdAnomalies.length > 0
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Double visa : signature par un 2e utilisateur différent du signataire initial.
+router.post("/:id/quality-checks/:checkId/second-visa", authorize("operator", "manager", "admin"), async (req, res, next) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const checkId = parseInt(req.params.checkId, 10);
+    const [lot] = await db.select().from(lots).where(sql`${lots.id} = ${id}`).limit(1);
+    if (!lot) return res.status(404).json({ error: "Lot introuvable" });
+
+    const [check] = await db.select().from(checksTable).where(sql`${checksTable.id} = ${checkId}`).limit(1);
+    if (!check || check.lotId !== id) return res.status(404).json({ error: "Contrôle introuvable" });
+
+    const [checkpoint] = await db
+      .select()
+      .from(qualityCheckpoints)
+      .where(sql`${qualityCheckpoints.id} = ${check.checkpointId}`)
+      .limit(1);
+    if (!checkpoint?.requiresSecondVisa) {
+      return res.status(400).json({ error: "Ce contrôle ne requiert pas de double visa" });
+    }
+    if (check.secondValidatedBy) {
+      return res.status(409).json({ error: "Le second visa est déjà apposé" });
+    }
+    if (check.createdBy === req.user.id) {
+      return res.status(403).json({ error: "Le second visa doit être apposé par un autre utilisateur" });
+    }
+
+    const [row] = await db
+      .update(checksTable)
+      .set({ secondValidatedBy: req.user.id, secondValidatedAt: new Date() })
+      .where(sql`${checksTable.id} = ${checkId}`)
+      .returning();
+
+    res.json({ id: row.id, secondValidatedById: row.secondValidatedBy, secondValidatedAt: row.secondValidatedAt });
   } catch (err) {
     next(err);
   }

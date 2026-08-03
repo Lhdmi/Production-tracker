@@ -22,7 +22,7 @@ router.get("/", async (req, res, next) => {
 
 router.post("/", authorize("admin"), async (req, res, next) => {
   try {
-    const { name, description, active, sortOrder } = req.body || {};
+    const { name, description, active, sortOrder, requiresSecondVisa } = req.body || {};
     const trimmed = (name || "").toString().trim();
     if (!trimmed) {
       return res.status(400).json({ error: "Le nom du point de contrôle est requis" });
@@ -33,6 +33,7 @@ router.post("/", authorize("admin"), async (req, res, next) => {
         name: trimmed,
         description: (description || "").toString().trim() || null,
         active: active !== false,
+        requiresSecondVisa: requiresSecondVisa === true,
         sortOrder: parseInt(sortOrder, 10) || 0
       })
       .returning();
@@ -51,11 +52,12 @@ router.patch("/:id", authorize("admin"), async (req, res, next) => {
       .where(sql`${qualityCheckpoints.id} = ${id}`)
       .limit(1);
     if (!existing) return res.status(404).json({ error: "Point de contrôle introuvable" });
-    const { name, description, active, sortOrder } = req.body || {};
+    const { name, description, active, sortOrder, requiresSecondVisa } = req.body || {};
     const patch = {};
     if (name && name.trim()) patch.name = name.trim();
     if (typeof description === "string") patch.description = description.trim() || null;
     if (typeof active === "boolean") patch.active = active;
+    if (typeof requiresSecondVisa === "boolean") patch.requiresSecondVisa = requiresSecondVisa;
     if (sortOrder !== undefined) patch.sortOrder = parseInt(sortOrder, 10) || 0;
     const [updated] = await db
       .update(qualityCheckpoints)

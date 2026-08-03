@@ -4,13 +4,15 @@ import {
   Scale, Trash2, AlertTriangle, CheckCircle2, RotateCcw, Clock,
   User, Package, Boxes, Plus, Search, CalendarDays, Loader2
 } from "lucide-react";
-import { api, formatDateTime, formatDate, MATERIAL_STATUS } from "../api";
+import { api, formatDateTime, formatDate, MATERIAL_STATUS, SHIFT_LABELS, NET_WEIGHT_LABELS } from "../api";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../components/Toast";
 import { LotBadge, AnomalyBadge, SeverityBadge } from "../components/Badge";
 import Numpad from "../components/Numpad";
 import BatchVerification from "../components/BatchVerification";
 import QualityChecklist from "../components/QualityChecklist";
+import CheckSessions from "../components/CheckSessions";
+import LotRelease from "../components/LotRelease";
 import LotDocuments from "../components/LotDocuments";
 import LotHistory from "../components/LotHistory";
 import { PhotoGallery } from "../components/PhotoGallery";
@@ -194,6 +196,25 @@ export default function LotDetail() {
                 {lot.batchRun ? ` · ${lot.batchRun}` : ""}
               </p>
             </div>
+            <div className="rounded-xl bg-white/10 p-2.5">
+              <p className="text-[11px] font-bold uppercase text-slate-400">Équipe</p>
+              <p className="text-sm font-black">{lot.shift ? SHIFT_LABELS[lot.shift] || lot.shift : "—"}</p>
+            </div>
+            <div className="rounded-xl bg-white/10 p-2.5">
+              <p className="text-[11px] font-bold uppercase text-slate-400">N° OT</p>
+              <p className="truncate text-sm font-black">{lot.otNumber || "—"}</p>
+            </div>
+            <div className="rounded-xl bg-white/10 p-2.5">
+              <p className="text-[11px] font-bold uppercase text-slate-400">Quantité produite</p>
+              <p className="text-sm font-black">
+                {lot.producedQuantity != null ? `${lot.producedQuantity} pièces` : "—"}
+                {lot.palletsQuantity != null && <span className="text-slate-300"> · {lot.palletsQuantity} pal.</span>}
+              </p>
+            </div>
+            <div className="rounded-xl bg-white/10 p-2.5">
+              <p className="text-[11px] font-bold uppercase text-slate-400">Poids net (Excel)</p>
+              <p className="text-sm font-black">{lot.netWeightStatus ? NET_WEIGHT_LABELS[lot.netWeightStatus] || lot.netWeightStatus : "—"}</p>
+            </div>
           </div>
         )}
       </header>
@@ -288,6 +309,10 @@ export default function LotDetail() {
       </section>
 
       <QualityChecklist lotId={lot.id} canManage={canManage} existing={lot.qualityChecks || []} onSaved={load} />
+
+      <CheckSessions lotId={lot.id} canManage={canManage} onSaved={load} />
+
+      <LotRelease lotId={lot.id} canManage={canManage} onSaved={load} />
 
       <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
         <div className="mb-3 flex items-center justify-between">

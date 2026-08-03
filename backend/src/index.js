@@ -17,6 +17,8 @@ import adminRoutes from "./routes/admin.js";
 import exportRoutes from "./routes/export.js";
 import checkpointsRoutes from "./routes/checkpoints.js";
 import materialsRoutes from "./routes/materials.js";
+import sessionsRoutes from "./routes/sessions.js";
+import releasesRoutes from "./routes/releases.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -103,6 +105,8 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/export", exportRoutes);
 app.use("/api/quality/checkpoints", checkpointsRoutes);
 app.use("/api/materials", materialsRoutes);
+app.use("/api/lots/:lotId/sessions", sessionsRoutes);
+app.use("/api/lots/:lotId/release", releasesRoutes);
 
 const frontendDist = path.join(__dirname, "../../frontend/dist");
 if (fs.existsSync(frontendDist)) {

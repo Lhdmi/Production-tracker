@@ -51,23 +51,31 @@ async function main() {
     console.log(`- point de contrôle supprimé : Température de process (#${cp.id})`);
   }
 
-  const { rows: checkpointCount } = await pool.query("SELECT count(*)::int AS n FROM quality_checkpoints");
-  if (checkpointCount[0].n === 0) {
-    const checkpoints = [
-      ["Vide de ligne", "La ligne est-elle vide de tout autre élément de la production précédente ?", 1],
-      ["Contrôle du nettoyage", "Les équipements et le poste de travail sont-ils propres et rangés ?", 2],
-      ["Conformité emballage", "Emballage, étiquetage et marquage conformes.", 3],
-      ["Masse / poids", "Poids dans la plage cible de l'OP.", 4],
-      ["Traçabilité / lots matière", "Références matières et numéros de lot tracés.", 5]
-    ];
-    for (const [name, description, sortOrder] of checkpoints) {
+  // Points de contrôle qualité par défaut (upsert idempotent).
+  // requires_second_visa = contrôle validé par un 2e utilisateur.
+  const checkpoints = [
+    ["Vide de ligne", "La ligne est-elle vide de tout autre élément de la production précédente ?", 1, false],
+    ["Contrôle du nettoyage", "Les équipements et le poste de travail sont-ils propres et rangés ?", 2, false],
+    ["Conformité emballage", "Emballage, étiquetage et marquage conformes.", 3, false],
+    ["Masse / poids", "Poids dans la plage cible de l'OP.", 4, false],
+    ["Traçabilité / lots matière", "Références matières et numéros de lot tracés.", 5, true],
+    ["Étiquette tube", "Étiquette du tube conforme et lisible.", 6, true]
+  ];
+  for (const [name, description, sortOrder, requiresSecondVisa] of checkpoints) {
+    const [cp] = (await pool.query("SELECT id FROM quality_checkpoints WHERE name = $1", [name])).rows;
+    if (cp) {
       await pool.query(
-        "INSERT INTO quality_checkpoints (name, description, sort_order) VALUES ($1,$2,$3)",
-        [name, description, sortOrder]
+        "UPDATE quality_checkpoints SET description = $2, sort_order = $3, requires_second_visa = $4 WHERE id = $1",
+        [cp.id, description, sortOrder, requiresSecondVisa]
+      );
+    } else {
+      await pool.query(
+        "INSERT INTO quality_checkpoints (name, description, sort_order, requires_second_visa) VALUES ($1,$2,$3,$4)",
+        [name, description, sortOrder, requiresSecondVisa]
       );
     }
-    console.log(`+ ${checkpoints.length} points de contrôle qualité créés`);
   }
+  console.log(`= ${checkpoints.length} points de contrôle qualité assurés`);
 
   const { rows: lotCount } = await pool.query("SELECT count(*)::int AS n FROM lots");
   if (lotCount[0].n > 0) {
