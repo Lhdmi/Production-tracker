@@ -50,9 +50,10 @@ export default function LotRelease({ lotId, canManage, onSaved }) {
     e.preventDefault();
     setSaving(true);
     try {
+      const values = form || editing || EMPTY;
       const res = await api.post(`/api/lots/${lotId}/release`, {
-        ...form,
-        released: form.released === true || form.released === "true"
+        ...values,
+        released: values.released === true || values.released === "true"
       });
       setRelease(res);
       setForm(null);
@@ -69,6 +70,7 @@ export default function LotRelease({ lotId, canManage, onSaved }) {
   if (!loaded) return <Spinner label="Chargement de la libération…" />;
 
   const summary = release || {};
+  const editing = form || (!release ? EMPTY : null);
 
   return (
     <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
@@ -124,7 +126,7 @@ export default function LotRelease({ lotId, canManage, onSaved }) {
         </p>
       )}
 
-      {canManage && (form || !release) && (
+      {canManage && editing && (
         <form onSubmit={submit} className="mt-4 flex flex-col gap-4">
           <ul className="flex flex-col gap-2">
             {FIELDS.map((f) => (
@@ -135,9 +137,9 @@ export default function LotRelease({ lotId, canManage, onSaved }) {
                     <button
                       key={o.value}
                       type="button"
-                      onClick={() => setForm({ ...form, [f.key]: o.value })}
+                      onClick={() => setForm({ ...editing, [f.key]: o.value })}
                       className={`rounded-full px-3 py-1 text-xs font-black ring-1 ring-slate-300 ${
-                        form[f.key] === o.value
+                        editing[f.key] === o.value
                           ? o.value === "compliant"
                             ? "bg-emerald-600 text-white"
                             : o.value === "non_compliant"
@@ -159,9 +161,9 @@ export default function LotRelease({ lotId, canManage, onSaved }) {
             <div className="grid grid-cols-2 gap-3">
               <button
                 type="button"
-                onClick={() => setForm({ ...form, released: true })}
+                onClick={() => setForm({ ...editing, released: true })}
                 className={`flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-base font-black ring-2 transition ${
-                  form.released ? "bg-emerald-600 text-white ring-emerald-600" : "bg-white text-slate-600 ring-slate-300"
+                  editing.released ? "bg-emerald-600 text-white ring-emerald-600" : "bg-white text-slate-600 ring-slate-300"
                 }`}
               >
                 <CheckCircle2 className="size-5" />
@@ -169,9 +171,9 @@ export default function LotRelease({ lotId, canManage, onSaved }) {
               </button>
               <button
                 type="button"
-                onClick={() => setForm({ ...form, released: false })}
+                onClick={() => setForm({ ...editing, released: false })}
                 className={`flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-base font-black ring-2 transition ${
-                  !form.released ? "bg-rose-600 text-white ring-rose-600" : "bg-white text-slate-600 ring-slate-300"
+                  !editing.released ? "bg-rose-600 text-white ring-rose-600" : "bg-white text-slate-600 ring-slate-300"
                 }`}
               >
                 <ShieldX className="size-5" />
@@ -179,15 +181,15 @@ export default function LotRelease({ lotId, canManage, onSaved }) {
               </button>
             </div>
             <p className="mt-1 text-xs font-semibold text-slate-400">
-              {form.released ? "La production est libérée — le lot passe au statut « Terminé »." : "Le lot reste ouvert."}
+              {editing.released ? "La production est libérée — le lot passe au statut « Terminé »." : "Le lot reste ouvert."}
             </p>
           </div>
 
           <div>
             <label className="mb-1 block text-sm font-bold text-slate-700">Commentaire</label>
             <textarea
-              value={form.comment}
-              onChange={(e) => setForm({ ...form, comment: e.target.value })}
+              value={editing.comment}
+              onChange={(e) => setForm({ ...editing, comment: e.target.value })}
               rows={2}
               className="w-full rounded-xl border-2 border-slate-300 px-4 py-3 focus:border-amber-400 focus:outline-none"
             />
@@ -207,11 +209,11 @@ export default function LotRelease({ lotId, canManage, onSaved }) {
               type="submit"
               disabled={saving}
               className={`flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-3 font-black text-white active:scale-[0.98] disabled:opacity-50 ${
-                form.released ? "bg-emerald-600" : "bg-rose-600"
+                editing.released ? "bg-emerald-600" : "bg-rose-600"
               }`}
             >
               {saving ? <Loader2 className="size-5 animate-spin" /> : <ShieldCheck className="size-5" />}
-              {form.released ? "Libérer le lot" : "Enregistrer la décision"}
+              {editing.released ? "Libérer le lot" : "Enregistrer la décision"}
             </button>
           </div>
         </form>
