@@ -1,0 +1,29 @@
+# Blueprint Render — déploiement de démonstration (usage interne)
+# Utilisation : https://dashboard.render.com/blueprints
+# → « New Blueprint » → URL du repo GitHub (Lhdmi/Production-tracker)
+services:
+  - type: web
+    name: production-tracker
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    # Crée le schéma + les données de démo avant le démarrage (idempotent)
+    preDeployCommand: npm run db:push && npm run db:seed
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: STORAGE_DRIVER
+        value: local
+      - key: PUBLIC_URL
+        value: ${RENDER_EXTERNAL_URL}
+      - key: JWT_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: production-tracker-db
+          property: connectionString
+
+databases:
+  - name: production-tracker-db
+    plan: free
