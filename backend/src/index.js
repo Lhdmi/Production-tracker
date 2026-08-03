@@ -3,6 +3,8 @@ import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import express from "express";
 import cors from "cors";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
 import { config } from "./config.js";
 import { pingDb, closeDb } from "./db/client.js";
 import { notFound, errorHandler } from "./middleware/errorHandler.js";
@@ -18,8 +20,60 @@ import checkpointsRoutes from "./routes/checkpoints.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 
+app.set("trust proxy", config.trustProxy);
 app.disable("x-powered-by");
-app.use(cors());
+
+app.use(
+  helmet({
+    // L'app est 100% même-origine : l'isolation COEP n'est pas nécessaire
+    crossOriginEmbedderPolicy: false
+  })
+);
+
+const allowedOrigins = [
+  config.publicUrl,
+  ...config.allowedOrigins
+];
+app.use(
+  cors({
+    origin(origin, cb) {
+      // Requêtes sans origine (curl, server-to-server, même origine) : OK
+      if (!origin) return cb(null, true);
+      const ok =
+        allowedOrigins.includes(origin) ||
+        /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+      return ok
+        ? cb(null, true)
+        : cb(Object.assign(new Error("Origine non autorisée"), { status: 403, expose: true }));
+    }
+  })
+);
+
+// Limite globale : 500 requêtes / 15 min / IP
+app.use(
+  "/api",
+  rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 500,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: "Trop de requêtes, réessayez dans quelques minutes." }
+  })
+);
+
+// Limite stricte sur la connexion : 10 essais / 15 min / IP
+app.use(
+  "/api/auth/login",
+  rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 10,
+    skipSuccessfulRequests: true,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: "Trop de tentatives de connexion. Réessayez dans 15 minutes." }
+  })
+);
+
 app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true }));
 

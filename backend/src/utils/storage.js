@@ -25,17 +25,29 @@ const diskStorage = multer.diskStorage({
   }
 });
 
+const ALLOWED_MIME_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+  "image/avif"
+];
+
 const fileFilter = (req, file, cb) => {
-  if (file.mimetype && file.mimetype.startsWith("image/")) {
+  if (file.mimetype && ALLOWED_MIME_TYPES.includes(file.mimetype)) {
     return cb(null, true);
   }
-  return cb(new Error("Seules les images sont autorisées"));
+  const err = Object.assign(new Error("Format d'image non autorisé"), { status: 415 });
+  return cb(err);
 };
 
 export const uploadImage = multer({
   storage: diskStorage,
   fileFilter,
-  limits: { fileSize: UPLOAD_LIMIT, files: 10 }
+  limits: {
+    fileSize: UPLOAD_LIMIT,
+    files: 1
+  }
 });
 
 export function toPublicUrl(file) {

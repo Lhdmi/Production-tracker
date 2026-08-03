@@ -17,7 +17,8 @@
     "start": "npm --workspace backend run start"
   },
   "devDependencies": {
-    "concurrently": "^9.1.0"
+    "concurrently": "^9.1.0",
+    "drizzle-orm": "^0.45.2"
   },
   "engines": {
     "node": ">=18.11.0"

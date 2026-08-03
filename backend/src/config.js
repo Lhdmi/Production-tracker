@@ -11,6 +11,14 @@ export const config = {
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || "12h",
   publicUrl: process.env.PUBLIC_URL || `http://localhost:${process.env.PORT || 3001}`,
   storageDriver: process.env.STORAGE_DRIVER || "local",
+  // Origines autorisées pour CORS (séparées par des virgules). Si vide,
+  // seule la PUBLIC_URL (et localhost en dev) sont autorisées.
+  allowedOrigins: (process.env.ALLOWED_ORIGINS || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean),
+  // Derrière le Ingress nginx : 1 proxy → on utilise X-Forwarded-For
+  trustProxy: process.env.TRUST_PROXY ? parseInt(process.env.TRUST_PROXY, 10) : 1,
   cloudinary: {
     cloudName: process.env.CLOUDINARY_CLOUD_NAME || "",
     apiKey: process.env.CLOUDINARY_API_KEY || "",
