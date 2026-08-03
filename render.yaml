@@ -8,13 +8,16 @@ services:
     plan: free
     dockerfilePath: ./Dockerfile
     healthCheckPath: /api/health
-    # Crée le schéma + les données de démo avant le démarrage (idempotent)
-    preDeployCommand: npm run db:push && npm run db:seed
+    # Les migrations + seed sont exécutées au démarrage du conteneur
+    # (RUN_MIGRATIONS=true), idempotent, car le pre-deploy n'est pas
+    # supporté sur le plan gratuit.
     envVars:
       - key: NODE_ENV
         value: production
       - key: STORAGE_DRIVER
         value: local
+      - key: RUN_MIGRATIONS
+        value: "true"
       - key: PUBLIC_URL
         value: ${RENDER_EXTERNAL_URL}
       - key: JWT_SECRET

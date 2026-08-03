@@ -26,4 +26,6 @@ COPY --from=builder /app/frontend/dist ./frontend/dist
 RUN mkdir -p /app/uploads
 
 EXPOSE 3001
-CMD ["node", "backend/src/index.js"]
+# RUN_MIGRATIONS=true → exécute db:push + db:seed (idempotent) au démarrage
+# (utilisé pour la démo Render ; en K8s, le Job db-init s'en charge)
+CMD ["sh", "-c", "if [ \"$RUN_MIGRATIONS\" = \"true\" ]; then npm run db:push && npm run db:seed; fi; node backend/src/index.js"]
