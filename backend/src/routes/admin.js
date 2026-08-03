@@ -136,13 +136,17 @@ router.get("/stats", async (req, res, next) => {
   }
 });
 
-const ADMIN_TABLES = ["ops", "lots", "weights", "anomalies", "photos", "users", "exports"];
+const ADMIN_TABLES = ["ops", "lots", "weights", "anomalies", "photos", "quality_checkpoints", "quality_checks", "lot_documents", "lot_scan_verifications", "users", "exports"];
 const ADMIN_TABLE_COLUMNS = {
   ops: ['id', 'op_number', 'created_at', 'created_by'],
   lots: ['id', 'op_id', 'lot_number', 'status', 'created_at', 'updated_at', 'completed_at', 'created_by'],
   weights: ['id', 'lot_id', 'weight', 'created_at', 'created_by'],
   anomalies: ['id', 'lot_id', 'type', 'description', 'severity', 'status', 'comment', 'created_at', 'created_by', 'validated_by', 'validated_at'],
   photos: ['id', 'anomaly_id', 'url', 'created_at'],
+  quality_checkpoints: ['id', 'name', 'description', 'active', 'sort_order', 'created_at'],
+  quality_checks: ['id', 'lot_id', 'checkpoint_id', 'status', 'comment', 'created_at', 'created_by'],
+  lot_documents: ['id', 'lot_id', 'title', 'image_url', 'ocr_text', 'created_at', 'created_by'],
+  lot_scan_verifications: ['id', 'lot_id', 'scanned_code', 'expected_code', 'matched', 'created_at', 'created_by'],
   users: ['id', 'name', 'email', 'role', 'created_at'],
   exports: ['id', 'user_id', 'entity', 'row_count', 'created_at']
 };
@@ -201,6 +205,9 @@ router.delete("/records/:table/:id", async (req, res, next) => {
       await pool.query("UPDATE lots SET created_by = NULL WHERE created_by = $1", [id]);
       await pool.query("UPDATE weights SET created_by = NULL WHERE created_by = $1", [id]);
       await pool.query("UPDATE anomalies SET created_by = NULL, validated_by = NULL WHERE created_by = $1 OR validated_by = $1", [id]);
+      await pool.query("UPDATE quality_checks SET created_by = NULL WHERE created_by = $1", [id]);
+      await pool.query("UPDATE lot_documents SET created_by = NULL WHERE created_by = $1", [id]);
+      await pool.query("UPDATE lot_scan_verifications SET created_by = NULL WHERE created_by = $1", [id]);
       await pool.query("DELETE FROM exports WHERE user_id = $1", [id]);
       await pool.query("DELETE FROM users WHERE id = $1", [id]);
     } else {
@@ -219,6 +226,9 @@ async function deleteLotCascade(lotId) {
   }
   await pool.query("DELETE FROM anomalies WHERE lot_id = $1", [lotId]);
   await pool.query("DELETE FROM weights WHERE lot_id = $1", [lotId]);
+  await pool.query("DELETE FROM quality_checks WHERE lot_id = $1", [lotId]);
+  await pool.query("DELETE FROM lot_documents WHERE lot_id = $1", [lotId]);
+  await pool.query("DELETE FROM lot_scan_verifications WHERE lot_id = $1", [lotId]);
   await pool.query("DELETE FROM lots WHERE id = $1", [lotId]);
 }
 

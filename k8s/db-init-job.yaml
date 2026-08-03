@@ -1,0 +1,35 @@
+# Applique le schéma Drizzle (db:push) puis insère les données de démo (seed).
+# À lancer une seule fois, après la mise en place de PostgreSQL et du Secret.
+# Relancer manuellement après un changement de schéma.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: db-init
+  namespace: production-tracker
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: OnFailure
+      imagePullSecrets:
+        - name: regcred
+      containers:
+        - name: db-init
+          image: registry.example.com/production-tracker:latest
+          envFrom:
+            - configMapRef:
+                name: production-tracker
+          env:
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: production-tracker
+                  key: db-password
+            - name: DATABASE_URL
+              value: "postgres://postgres:$(DB_PASSWORD)@postgres:5432/production_tracker"
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              until node -e "require('net').connect(5432,'postgres').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"; do echo "attente postgres…"; sleep 2; done
+              npm --workspace backend run db:push
+              npm --workspace backend run db:seed

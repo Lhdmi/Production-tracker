@@ -3,6 +3,7 @@ import { Search as SearchIcon, FilterX, ChevronLeft, ChevronRight } from "lucide
 import { api } from "../api";
 import { useAuth } from "../context/AuthContext";
 import LotList from "../components/LotList";
+import Scanner from "../components/Scanner";
 import { Spinner, ErrorState } from "../components/States";
 
 const STATUS_FILTERS = [
@@ -56,6 +57,8 @@ export default function Search() {
           {mine ? "Recherche dans vos lots" : "Recherche dans tous les lots"}
         </p>
       </header>
+
+      <Scanner />
 
       <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
         <div className="relative">

@@ -126,3 +126,9 @@ export const ROLE_LABELS = {
   manager: "Manager",
   admin: "Administrateur"
 };
+
+export const CHECK_STATUS = {
+  compliant: { label: "Conforme", cls: "bg-emerald-100 text-emerald-800 ring-emerald-200" },
+  non_compliant: { label: "Non conforme", cls: "bg-rose-100 text-rose-800 ring-rose-200" },
+  na: { label: "N/A", cls: "bg-slate-200 text-slate-700 ring-slate-300" }
+};

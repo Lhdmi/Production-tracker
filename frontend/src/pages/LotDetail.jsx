@@ -9,6 +9,10 @@ import { useAuth } from "../context/AuthContext";
 import { useToast } from "../components/Toast";
 import { LotBadge, AnomalyBadge, SeverityBadge } from "../components/Badge";
 import Numpad from "../components/Numpad";
+import BatchVerification from "../components/BatchVerification";
+import QualityChecklist from "../components/QualityChecklist";
+import LotDocuments from "../components/LotDocuments";
+import LotHistory from "../components/LotHistory";
 import { PhotoGallery } from "../components/PhotoGallery";
 import { Spinner, ErrorState } from "../components/States";
 import { Modal } from "../components/Modal";
@@ -23,6 +27,7 @@ export default function LotDetail() {
   const [loading, setLoading] = useState(true);
   const [savingWeight, setSavingWeight] = useState(false);
   const [confirm, setConfirm] = useState(null);
+  const [batchVerified, setBatchVerified] = useState(false);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -118,7 +123,14 @@ export default function LotDetail() {
         </div>
       </header>
 
-      {canManage && (
+      <BatchVerification
+        lotId={lot.id}
+        lotNumber={lot.lotNumber}
+        verified={batchVerified}
+        onVerified={setBatchVerified}
+      />
+
+      {canManage && batchVerified && (
         <button
           onClick={() => navigate(`/anomalies/nouvelle?lot=${id}`)}
           className="flex h-16 items-center justify-center gap-3 rounded-2xl bg-rose-600 text-lg font-black text-white shadow-md transition active:scale-[0.98]"
@@ -134,8 +146,12 @@ export default function LotDetail() {
           Relevés de poids
         </h2>
 
-        {canManage && lot.status !== "completed" ? (
+        {canManage && lot.status !== "completed" && batchVerified ? (
           <Numpad onSave={addWeight} saving={savingWeight} />
+        ) : canManage && lot.status !== "completed" && !batchVerified ? (
+          <div className="rounded-xl bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800 ring-1 ring-amber-200">
+            Vérifiez d'abord le code batch ci-dessus pour déverrouiller la saisie des poids.
+          </div>
         ) : (
           <div className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-500 ring-1 ring-slate-200">
             {lot.status === "completed"
@@ -195,6 +211,12 @@ export default function LotDetail() {
           ))}
         </ul>
       </section>
+
+      <QualityChecklist lotId={lot.id} canManage={canManage} existing={lot.qualityChecks || []} onSaved={load} />
+
+      <LotDocuments lotId={lot.id} canManage={canManage} documents={lot.documents || []} onUploaded={load} />
+
+      {(user.role === "manager" || user.role === "admin") && <LotHistory lotId={lot.id} />}
 
       <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
         <h2 className="mb-3 flex items-center gap-2 text-lg font-black text-slate-900">

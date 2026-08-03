@@ -1,6 +1,6 @@
 # ProdTrack — Suivi de production
 
-Application web mobile (PWA) de **gestion de production et suivi de poids** avec **gestion d'anomalies**.
+Application web mobile (PWA) de **gestion de production et suivi de poids** avec **gestion d'anomalies** et **contrôle qualité**.
 Conçue pour un usage sur smartphone Android en atelier : grands boutons, contraste élevé, saisie rapide au pavé numérique.
 
 ## Stack technique
@@ -72,7 +72,12 @@ plus les variables `CLOUDINARY_*`.
 - **Anomalies** : bouton d'alerte accessible en permanence sur la fiche lot, type, gravité (Faible → Critique), description, photos (prise de vue caméra ou import), validation / rejet par le manager avec commentaire.
 - **Statuts de lot** : En cours, Terminé, En anomalie (badges colorés + pastilles).
 - **Dashboard Manager/Admin** : indicateurs globaux, statut des lots, dernières anomalies, exports CSV.
-- **Administration** : visionneuse directe des tables (OP, Lots, Poids, Anomalies, Photos, Utilisateurs, Exports) avec filtre et suppression en cascade, gestion complète des comptes (création, modification, changement de rôle, mot de passe).
+- **Contrôle qualité (checklist)** : points de contrôle configurables par l'admin (Conforme / Non conforme / N/A + commentaire) ; un contrôle « Non conforme » crée automatiquement une anomalie ouverte sur le lot.
+- **Scan code-barres / QR** : identification d'un lot ou d'une OP par la caméra (ou saisie manuelle) depuis la recherche.
+- **Vérification du code batch** : avant toute reprise de saisie sur un lot existant, scan (caméra ou manuel) obligatoire du numéro de lot ; en cas de non-correspondance, alerte bloquante « Lot scanné : X — Lot attendu : Y » qui empêche la saisie (poids, anomalie). Chaque tentative (correcte ou erronée) est horodatée, liée à l'utilisateur et visible dans l'historique du lot.
+- **Documents & OCR (V2)** : photo d'un document attachée au lot (bulletin, fiche de contrôle), texte OCR stocké et consultable.
+- **Historique / traçabilité** : chronologie des événements du lot (poids, contrôles, documents, anomalies) consultable par le Manager et l'Admin.
+- **Administration** : visionneuse directe des tables (OP, Lots, Poids, Anomalies, Photos, Points de contrôle, Contrôles, Documents, Utilisateurs, Exports) avec filtre et suppression en cascade, gestion complète des comptes (création, modification, changement de rôle, mot de passe) et gestion de la checklist qualité.
 - **Exports CSV** (UTF-8, compatibles Excel) : lots, anomalies, OP, relevés de poids — journalisés.
 - **PWA** : installable sur Android, service worker avec cache de l'interface.
 
@@ -88,8 +93,8 @@ production-tracker/
 │     ├─ config.js
 │     ├─ db/                 # schéma Drizzle, client, seed
 │     ├─ middleware/         # auth JWT, RBAC, gestion d'erreurs
-│     ├─ routes/             # auth, ops, lots, anomalies, admin, export
-│     └─ utils/storage.js    # multer (local / Cloudinary)
+│     ├─ routes/             # auth, ops, lots, anomalies, admin, export, checkpoints
+│     └─ utils/              # storage.js (multer local / Cloudinary), ocr.js (V2)
 └─ frontend/
    ├─ public/                # manifest, service worker, icônes
    └─ src/
@@ -111,6 +116,13 @@ GET/PATCH/DELETE /api/lots/:id       Détail / statut / suppression
 POST/DELETE /api/lots/:id/weights    Ajout / suppression d'un relevé
 POST /api/lots/:id/anomalies         Déclaration + photos (multipart)
 GET/PATCH/DELETE /api/anomalies      Liste / validation / suppression
+GET  /api/quality/checkpoints        Liste des points de contrôle (opérateur+)
+POST/PATCH/DELETE /api/quality/checkpoints   Gestion des points (admin)
+GET/POST /api/lots/:id/quality-checks Contrôles du lot (auto-anomalie si Non conforme)
+POST /api/lots/:id/documents         Photo document + OCR (multipart)
+POST /api/lots/:id/scan-verifications Vérification batch (matched + historisée)
+GET  /api/lots/:id/history           Chronologie / traçabilité (manager+)
+GET  /api/lots/scan?code=…           Identification lot ou OP par code-barres
 GET  /api/admin/stats                Indicateurs (manager+)
 GET  /api/admin/records?table=…      Visionneuse BDD (admin)
 POST/PATCH/DELETE /api/admin/users   Comptes (admin)

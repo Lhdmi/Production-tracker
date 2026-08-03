@@ -11,6 +11,10 @@ const TABLES = [
   { value: "weights", label: "Relevés de poids" },
   { value: "anomalies", label: "Anomalies" },
   { value: "photos", label: "Photos" },
+  { value: "quality_checkpoints", label: "Points de contrôle" },
+  { value: "quality_checks", label: "Contrôles qualité" },
+  { value: "lot_documents", label: "Documents" },
+  { value: "lot_scan_verifications", label: "Scans batch" },
   { value: "users", label: "Utilisateurs" },
   { value: "exports", label: "Exports" }
 ];
@@ -21,7 +25,15 @@ const COLUMN_LABELS = {
   op_number: "Numéro OP",
   lot_id: "Lot id",
   lot_number: "Numéro lot",
+  checkpoint_id: "Contrôle id",
   status: "Statut",
+  active: "Actif",
+  sort_order: "Ordre",
+  image_url: "Image",
+  ocr_text: "Texte OCR",
+  scanned_code: "Code scanné",
+  expected_code: "Code attendu",
+  matched: "Correspond",
   weight: "Poids",
   type: "Type",
   description: "Description",
@@ -87,6 +99,7 @@ export default function DatabaseViewer() {
 
   const isPhotoTable = table === "photos";
   const isUserTable = table === "users";
+  const isDocTable = table === "lot_documents";
 
   return (
     <div className="flex flex-col gap-4">
@@ -146,6 +159,8 @@ export default function DatabaseViewer() {
                             <td key={c} className="max-w-[240px] px-3 py-2">
                               {isPhotoTable && c === "url" ? (
                                 <img src={row[c]} alt="photo" className="h-16 w-16 rounded-lg object-cover ring-1 ring-slate-200" />
+                              ) : isDocTable && c === "image_url" && row[c] ? (
+                                <img src={row[c]} alt="doc" className="h-16 w-16 rounded-lg object-cover ring-1 ring-slate-200" />
                               ) : isUserTable && c === "email" ? (
                                 <span className="break-all">{row[c]}</span>
                               ) : (

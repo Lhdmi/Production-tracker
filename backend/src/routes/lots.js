@@ -1,8 +1,10 @@
 import { Router } from "express";
 import { sql } from "drizzle-orm";
 import { pool, db } from "../db/client.js";
-import { lots, weights } from "../db/schema.js";
+import { lots, weights, anomalies, qualityChecks as checksTable, lotDocuments, lotScanVerifications } from "../db/schema.js";
 import { authenticate, authorize } from "../middleware/auth.js";
+import { uploadImage, toPublicUrl } from "../utils/storage.js";
+import { runOcr } from "../utils/ocr.js";
 
 const router = Router();
 router.use(authenticate);
@@ -59,6 +61,33 @@ async function getAnomalies(lotId) {
     `
   );
   return rows.map((r) => ({ ...r, photos: r.photos || [] }));
+}
+
+async function getQualityChecks(lotId) {
+  const { rows } = await pool.query(`
+    SELECT qc.id, qc.status, qc.comment, qc.created_at AS "createdAt",
+           qc.checkpoint_id AS "checkpointId",
+           qcp.name AS "checkpointName",
+           u.name AS "createdByName"
+    FROM quality_checks qc
+    JOIN quality_checkpoints qcp ON qcp.id = qc.checkpoint_id
+    LEFT JOIN users u ON u.id = qc.created_by
+    WHERE qc.lot_id = $1
+    ORDER BY qc.created_at DESC, qc.id DESC
+  `, [lotId]);
+  return rows;
+}
+
+async function getDocuments(lotId) {
+  const { rows } = await pool.query(`
+    SELECT d.id, d.title, d.image_url AS "imageUrl", d.ocr_text AS "ocrText",
+           d.created_at AS "createdAt", u.name AS "createdByName"
+    FROM lot_documents d
+    LEFT JOIN users u ON u.id = d.created_by
+    WHERE d.lot_id = $1
+    ORDER BY d.id DESC
+  `, [lotId]);
+  return rows;
 }
 
 router.get("/", async (req, res, next) => {
@@ -122,6 +151,52 @@ router.get("/", async (req, res, next) => {
   }
 });
 
+router.get("/scan", async (req, res, next) => {
+  try {
+    const code = (req.query.code || "").toString().trim();
+    if (!code) return res.status(400).json({ error: "Code manquant" });
+
+    const { rows: lotRows } = await pool.query(`
+      SELECT l.id, l.lot_number AS "lotNumber", l.status,
+             o.op_number AS "opNumber", u.name AS "createdByName"
+      FROM lots l
+      JOIN ops o ON o.id = l.op_id
+      LEFT JOIN users u ON u.id = l.created_by
+      WHERE l.lot_number = $1
+      LIMIT 1
+    `, [code]);
+
+    if (lotRows.length) {
+      return res.json({ kind: "lot", lot: lotRows[0] });
+    }
+
+    const { rows: opRows } = await pool.query(`
+      SELECT o.id, o.op_number AS "opNumber",
+             (SELECT count(*)::int FROM lots l WHERE l.op_id = o.id) AS "lotCount"
+      FROM ops o
+      WHERE o.op_number = $1
+      LIMIT 1
+    `, [code]);
+
+    if (opRows.length) {
+      const { rows: lotsList } = await pool.query(`
+        SELECT l.id, l.lot_number AS "lotNumber", l.status,
+               o.op_number AS "opNumber", u.name AS "createdByName"
+        FROM lots l
+        JOIN ops o ON o.id = l.op_id
+        LEFT JOIN users u ON u.id = l.created_by
+        WHERE l.op_id = $1
+        ORDER BY l.id
+      `, [opRows[0].id]);
+      return res.json({ kind: "op", op: opRows[0], lots: lotsList });
+    }
+
+    res.status(404).json({ error: `Aucun lot ni OP trouvé pour le code « ${code} »` });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.post("/", async (req, res, next) => {
   try {
     const opNumber = (req.body?.opNumber || "").toString().trim().toUpperCase();
@@ -159,8 +234,13 @@ router.get("/:id", async (req, res, next) => {
     const id = parseInt(req.params.id, 10);
     const row = await getLotRow(id);
     if (!row) return res.status(404).json({ error: "Lot introuvable" });
-    const [lotWeights, lotAnomalies] = await Promise.all([getWeights(id), getAnomalies(id)]);
-    res.json({ ...row, weights: lotWeights, anomalies: lotAnomalies });
+    const [lotWeights, lotAnomalies, lotChecks, lotDocs] = await Promise.all([
+      getWeights(id),
+      getAnomalies(id),
+      getQualityChecks(id),
+      getDocuments(id)
+    ]);
+    res.json({ ...row, weights: lotWeights, anomalies: lotAnomalies, qualityChecks: lotChecks, documents: lotDocs });
   } catch (err) {
     next(err);
   }
@@ -241,6 +321,209 @@ router.delete("/:id/weights/:weightId", async (req, res, next) => {
     }
     await db.delete(weights).where(sql`${weights.id} = ${weightId}`);
     res.status(204).end();
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/:id/scan-verifications", authorize("operator", "manager", "admin"), async (req, res, next) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const [lot] = await db.select().from(lots).where(sql`${lots.id} = ${id}`).limit(1);
+    if (!lot) return res.status(404).json({ error: "Lot introuvable" });
+    const code = String(req.body?.code || "").trim();
+    if (!code) return res.status(400).json({ error: "Code batch requis" });
+
+    const expected = lot.lotNumber;
+    const matched = code.toUpperCase() === String(expected).trim().toUpperCase();
+
+    const [row] = await db
+      .insert(lotScanVerifications)
+      .values({ lotId: id, scannedCode: code, expectedCode: expected, matched, createdBy: req.user.id })
+      .returning();
+
+    res.status(201).json({
+      id: row.id,
+      matched,
+      scanned: code,
+      expected: String(expected),
+      createdAt: row.createdAt
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/:id/quality-checks", async (req, res, next) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const [lot] = await db.select().from(lots).where(sql`${lots.id} = ${id}`).limit(1);
+    if (!lot) return res.status(404).json({ error: "Lot introuvable" });
+    res.json(await getQualityChecks(id));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/:id/quality-checks", authorize("operator", "manager", "admin"), async (req, res, next) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const [lot] = await db.select().from(lots).where(sql`${lots.id} = ${id}`).limit(1);
+    if (!lot) return res.status(404).json({ error: "Lot introuvable" });
+    if (!canManageLot(req.user, lot)) {
+      return res.status(403).json({ error: "Vous ne pouvez modifier que vos propres lots" });
+    }
+
+    const submitted = Array.isArray(req.body?.checks) ? req.body.checks : [];
+    if (!submitted.length) {
+      return res.status(400).json({ error: "Aucun contrôle à enregistrer" });
+    }
+
+    const results = [];
+    for (const c of submitted) {
+      const checkpointId = parseInt(c.checkpointId, 10);
+      const status = String(c.status || "");
+      if (!checkpointId || !["compliant", "non_compliant", "na"].includes(status)) {
+        return res.status(400).json({ error: "Contrôle invalide (checkpointId / status requis)" });
+      }
+      const comment = String(c.comment || "").trim() || null;
+
+      const [existing] = await db
+        .select()
+        .from(checksTable)
+        .where(sql`${checksTable.lotId} = ${id} AND ${checksTable.checkpointId} = ${checkpointId}`)
+        .limit(1);
+
+      let row;
+      if (existing) {
+        [row] = await db
+          .update(checksTable)
+          .set({ status, comment, createdAt: new Date(), createdBy: req.user.id })
+          .where(sql`${checksTable.id} = ${existing.id}`)
+          .returning();
+      } else {
+        [row] = await db
+          .insert(checksTable)
+          .values({ lotId: id, checkpointId, status, comment, createdBy: req.user.id })
+          .returning();
+      }
+      results.push(row);
+    }
+
+    let createdAnomalies = [];
+    for (const c of submitted) {
+      if (String(c.status) !== "non_compliant") continue;
+      const cpId = parseInt(c.checkpointId, 10);
+      const cpName = (await pool.query("SELECT name FROM quality_checkpoints WHERE id = $1", [cpId])).rows[0]?.name || `#${cpId}`;
+      const comment = String(c.comment || "").trim() || null;
+      const [dup] = await db
+        .select()
+        .from(anomalies)
+        .where(sql`${anomalies.lotId} = ${id} AND ${anomalies.type} = ${`Contrôle qualité : ${cpName}`} AND ${anomalies.status} = 'open'`)
+        .limit(1);
+      if (dup) continue;
+      const [a] = await db
+        .insert(anomalies)
+        .values({
+          lotId: id,
+          type: `Contrôle qualité : ${cpName}`,
+          description: comment || `Point de contrôle non conforme : ${cpName}`,
+          severity: "high",
+          status: "open",
+          createdBy: req.user.id
+        })
+        .returning();
+      createdAnomalies.push(a);
+    }
+
+    res.status(201).json({
+      checks: results,
+      anomalies: createdAnomalies,
+      anomalyCreated: createdAnomalies.length > 0
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/:id/documents", authorize("operator", "manager", "admin"), uploadImage.array("image", 1), async (req, res, next) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const [lot] = await db.select().from(lots).where(sql`${lots.id} = ${id}`).limit(1);
+    if (!lot) return res.status(404).json({ error: "Lot introuvable" });
+    if (!canManageLot(req.user, lot)) {
+      return res.status(403).json({ error: "Vous ne pouvez modifier que vos propres lots" });
+    }
+    const file = req.files?.[0];
+    if (!file) {
+      return res.status(400).json({ error: "Photo du document requise" });
+    }
+
+    const title = String(req.body?.title || "").trim() || null;
+    const imageUrl = toPublicUrl(file);
+    const ocrText = await runOcr(file.path);
+
+    const [doc] = await db
+      .insert(lotDocuments)
+      .values({ lotId: id, title, imageUrl, ocrText, createdBy: req.user.id })
+      .returning();
+    const full = await getDocuments(id);
+    res.status(201).json(full.find((d) => d.id === doc.id));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/:id/history", async (req, res, next) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const [lot] = await db.select().from(lots).where(sql`${lots.id} = ${id}`).limit(1);
+    if (!lot) return res.status(404).json({ error: "Lot introuvable" });
+
+    const [weights, checks, docs, anoms, scans] = await Promise.all([
+      pool.query(`
+        SELECT 'weight' AS kind, w.created_at AS "at", w.weight::float8 AS weight,
+               null AS "text", u.name AS "by"
+        FROM weights w LEFT JOIN users u ON u.id = w.created_by WHERE w.lot_id = $1
+      `, [id]),
+      pool.query(`
+        SELECT 'check' AS kind, qc.created_at AS "at", null AS weight,
+               qcp.name AS "text", u.name AS "by"
+        FROM quality_checks qc
+        JOIN quality_checkpoints qcp ON qcp.id = qc.checkpoint_id
+        LEFT JOIN users u ON u.id = qc.created_by
+        WHERE qc.lot_id = $1
+      `, [id]),
+      pool.query(`
+        SELECT 'document' AS kind, d.created_at AS "at", null AS weight,
+               COALESCE(d.title, 'Document') AS "text", u.name AS "by"
+        FROM lot_documents d LEFT JOIN users u ON u.id = d.created_by WHERE d.lot_id = $1
+      `, [id]),
+      pool.query(`
+        SELECT 'anomaly' AS kind, a.created_at AS "at", null AS weight,
+               a.type AS "text", u.name AS "by"
+        FROM anomalies a LEFT JOIN users u ON u.id = a.created_by WHERE a.lot_id = $1
+      `, [id]),
+      pool.query(`
+        SELECT 'scan' AS kind, s.created_at AS "at", null AS weight,
+               (CASE WHEN s.matched
+                     THEN 'Batch validé : ' || s.scanned_code
+                     ELSE 'Batch incorrect : ' || s.scanned_code || ' ≠ ' || s.expected_code END) AS "text",
+               u.name AS "by"
+        FROM lot_scan_verifications s LEFT JOIN users u ON u.id = s.created_by
+        WHERE s.lot_id = $1
+      `, [id])
+    ]);
+
+    const timeline = [
+      ...weights.rows.map((r) => ({ ...r, text: `Poids : ${r.weight} kg` })),
+      ...checks.rows,
+      ...docs.rows,
+      ...anoms.rows,
+      ...scans.rows
+    ].sort((a, b) => new Date(a.at) - new Date(b.at));
+
+    res.json(timeline);
   } catch (err) {
     next(err);
   }

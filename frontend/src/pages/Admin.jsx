@@ -1,11 +1,13 @@
 import { NavLink, Route, Routes } from "react-router-dom";
-import { Database, Users, Download } from "lucide-react";
+import { Database, Users, Download, ClipboardCheck } from "lucide-react";
 import DatabaseViewer from "./admin/DatabaseViewer";
 import UsersManagement from "./admin/UsersManagement";
 import AdminExports from "./admin/AdminExports";
+import QualityCheckpoints from "./admin/QualityCheckpoints";
 
 const TABS = [
   { to: "/admin", label: "Base de données", icon: Database, end: true },
+  { to: "/admin/checkpoints", label: "Checklist qualité", icon: ClipboardCheck },
   { to: "/admin/utilisateurs", label: "Utilisateurs", icon: Users },
   { to: "/admin/exports", label: "Exports", icon: Download }
 ];
@@ -38,6 +40,7 @@ export default function Admin() {
 
       <Routes>
         <Route index element={<DatabaseViewer />} />
+        <Route path="checkpoints" element={<QualityCheckpoints />} />
         <Route path="utilisateurs" element={<UsersManagement />} />
         <Route path="exports" element={<AdminExports />} />
       </Routes>

@@ -39,6 +39,24 @@ async function main() {
     console.log(`+ utilisateur créé : ${u.email} / ${u.password} (${u.role})`);
   }
 
+  const { rows: checkpointCount } = await pool.query("SELECT count(*)::int AS n FROM quality_checkpoints");
+  if (checkpointCount[0].n === 0) {
+    const checkpoints = [
+      ["Température de process", "Température relevée conforme au prérequis du process.", 1],
+      ["Aspect visuel", "Absence de défauts visibles (couleur, texture, traces).", 2],
+      ["Conformité emballage", "Emballage, étiquetage et marquage conformes.", 3],
+      ["Masse / poids", "Poids dans la plage cible de l'OP.", 4],
+      ["Traçabilité / lots matière", "Références matières et numéros de lot tracés.", 5]
+    ];
+    for (const [name, description, sortOrder] of checkpoints) {
+      await pool.query(
+        "INSERT INTO quality_checkpoints (name, description, sort_order) VALUES ($1,$2,$3)",
+        [name, description, sortOrder]
+      );
+    }
+    console.log(`+ ${checkpoints.length} points de contrôle qualité créés`);
+  }
+
   const { rows: lotCount } = await pool.query("SELECT count(*)::int AS n FROM lots");
   if (lotCount[0].n > 0) {
     console.log("= Des lots existent déjà, données de démo ignorées.");
@@ -94,6 +112,7 @@ async function main() {
   console.log("+ 1 anomalie ouverte avec photo de démo");
 
   await pool.query("DELETE FROM exports");
+
   console.log("✓ Seed terminé. Comptes : admin@example.com / manager@example.com / operator@example.com");
   await closeDb();
 }

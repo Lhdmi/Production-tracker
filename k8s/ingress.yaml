@@ -1,0 +1,26 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: production-tracker
+  namespace: production-tracker
+  annotations:
+    # Issuer cert-manager : "letsencrypt-prod" si nom de domaine public,
+    # ou un ClusterIssuer interne (CA de l'entreprise) sinon.
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - prodtrack.example.com
+      secretName: production-tracker-tls
+  rules:
+    - host: prodtrack.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: production-tracker
+                port:
+                  number: 80
