@@ -18,8 +18,10 @@ services:
         value: local
       - key: RUN_MIGRATIONS
         value: "true"
+      # URL publique de l'app. ${RENDER_EXTERNAL_URL} n'est pas interpolé
+      # dans un Blueprint → on la fixe. La mettre à jour si l'URL change.
       - key: PUBLIC_URL
-        value: ${RENDER_EXTERNAL_URL}
+        value: https://production-tracker-oflz.onrender.com
       - key: JWT_SECRET
         generateValue: true
       - key: DATABASE_URL

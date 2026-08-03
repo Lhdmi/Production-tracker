@@ -34,20 +34,24 @@ const allowedOrigins = [
   config.publicUrl,
   ...config.allowedOrigins
 ];
-app.use(
+app.use((req, res, next) => {
   cors({
     origin(origin, cb) {
       // Requêtes sans origine (curl, server-to-server, même origine) : OK
       if (!origin) return cb(null, true);
+      // Même origine (l'en-tête Origin est envoyé par les requêtes CORS
+      // comme les assets « crossorigin » de Vite) : toujours autorisée.
+      const sameOrigin = `${req.protocol}://${req.get("host")}`;
       const ok =
         allowedOrigins.includes(origin) ||
+        origin === sameOrigin ||
         /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
       return ok
         ? cb(null, true)
         : cb(Object.assign(new Error("Origine non autorisée"), { status: 403, expose: true }));
     }
-  })
-);
+  })(req, res, next);
+});
 
 // Limite globale : 500 requêtes / 15 min / IP
 app.use(
